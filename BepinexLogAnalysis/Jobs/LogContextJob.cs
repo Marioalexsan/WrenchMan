@@ -1,0 +1,65 @@
+﻿using System.Text.RegularExpressions;
+
+namespace BepinexLogAnalysis.Jobs;
+
+public partial class LogContextJob : IJob
+{
+    [GeneratedRegex("""bepinex ([0-9\.]*) - (.*) \((.*)\)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex LogStartRegex();
+
+    private string _game = "Unknown";
+    private string _bepinexVersion = "Unknown";
+    private DateTime _startTime = DateTime.UtcNow;
+    private DateTime _endTime = DateTime.UtcNow;
+
+    public void ProcessLog(LogLine line, Dictionary<string, string> context)
+    {
+        if (!(line.Line == 1 && line.Source == "BepInEx"))
+            return;
+
+        // Check if we can extract the game and BepInEx version
+        Match gameMatch = LogStartRegex().Match(line.Contents);
+
+        if (gameMatch.Success)
+        {
+            _bepinexVersion = context["bepinex_version"] = gameMatch.Groups[1].Value;
+            _game = context["game"] = gameMatch.Groups[2].Value;
+        }
+    }
+
+    public void OutputResults(StreamWriter stream)
+    {
+        stream.WriteLine("--- Metadata ---");
+        stream.WriteLine();
+
+        stream.Write("Game: ");
+        stream.WriteLine(_game);
+
+        stream.Write("BepInEx version: ");
+        stream.WriteLine(_bepinexVersion);
+
+        stream.Write("Log processing time: ");
+        stream.Write((_endTime - _startTime).TotalMilliseconds);
+        stream.WriteLine("ms");
+
+        stream.WriteLine();
+    }
+
+    public void Reset()
+    {
+        _game = "Unknown";
+        _bepinexVersion = "Unknown";
+        _startTime = DateTime.UtcNow;
+        _endTime = DateTime.UtcNow;
+    }
+
+    public void OnLogBegin()
+    {
+        _startTime = DateTime.UtcNow;
+    }
+
+    public void OnLogEnd()
+    {
+        _endTime = DateTime.UtcNow;
+    }
+}
