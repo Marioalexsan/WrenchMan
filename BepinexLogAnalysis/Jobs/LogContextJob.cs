@@ -1,4 +1,6 @@
-﻿using System.Text.RegularExpressions;
+﻿using BepinexLogAnalysis.SeverityRules;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace BepinexLogAnalysis.Jobs;
 
@@ -8,22 +10,45 @@ public partial class LogContextJob : IJob
     private static partial Regex LogStartRegex();
 
     private string _game = "Unknown";
+    private string _gameVersion = "Unknown";
+
     private string _bepinexVersion = "Unknown";
+
+    private string _gameStartTime = "Unknown";
+
     private DateTime _startTime = DateTime.UtcNow;
     private DateTime _endTime = DateTime.UtcNow;
 
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
-        if (!(line.Line == 1 && line.Source == "BepInEx"))
-            return;
-
-        // Check if we can extract the game and BepInEx version
-        Match gameMatch = LogStartRegex().Match(line.Contents);
-
-        if (gameMatch.Success)
+        if (line.Line == 1 && line.Source == "BepInEx")
         {
-            _bepinexVersion = context["bepinex_version"] = gameMatch.Groups[1].Value;
-            _game = context["game"] = gameMatch.Groups[2].Value;
+            // Check if we can extract the game and BepInEx version
+            Match gameMatch = LogStartRegex().Match(line.Contents);
+
+            if (gameMatch.Success)
+            {
+                _bepinexVersion = context["bepinex_version"] = gameMatch.Groups[1].Value;
+                _game = context["game"] = gameMatch.Groups[2].Value;
+            }
+
+            return;
+        }
+
+        if (_game == "ATLYSS")
+        {
+            if (_gameStartTime == "Unknown" && line.Source == "Homebrewery")
+            {
+                Match wakeupCall = AtlyssMatchers.HomebreweryWakeup().Match(line.Contents);
+
+                if (wakeupCall.Success)
+                {
+                    _gameStartTime = DateTime.TryParse($"{wakeupCall.Groups[1].Value} {wakeupCall.Groups[2].Value} {wakeupCall.Groups[3].Value}", null, DateTimeStyles.AssumeUniversal, out var result)
+                        ? result.ToUniversalTime().ToString("yyyy-MM-dd hh:mm:ss UTC")
+                        : _gameStartTime;
+                    _gameVersion = wakeupCall.Groups[4].Value;
+                }
+            }
         }
     }
 
@@ -34,9 +59,14 @@ public partial class LogContextJob : IJob
 
         stream.Write("Game: ");
         stream.WriteLine(_game);
+        stream.Write("Game version: ");
+        stream.WriteLine(_gameVersion);
 
         stream.Write("BepInEx version: ");
         stream.WriteLine(_bepinexVersion);
+
+        stream.Write("Log timestamp: ");
+        stream.WriteLine(_gameStartTime);
 
         stream.Write("Log processing time: ");
         stream.Write((_endTime - _startTime).TotalMilliseconds);
@@ -48,7 +78,11 @@ public partial class LogContextJob : IJob
     public void Reset()
     {
         _game = "Unknown";
+        _gameVersion = "Unknown";
         _bepinexVersion = "Unknown";
+
+        _gameStartTime = "Unknown";
+
         _startTime = DateTime.UtcNow;
         _endTime = DateTime.UtcNow;
     }

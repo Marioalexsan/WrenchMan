@@ -13,14 +13,14 @@ public static partial class GenericMatchers
     ];
 
     [GeneratedRegex("""skipping.*version exists""", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex BepinexMultipleLoads();
+    public static partial Regex BepinexMultipleLoads();
 
     [GeneratedRegex("""bepinex \(.+\) and might not work""", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex BepinexMismatchedVersion();
+    public static partial Regex BepinexMismatchedVersion();
 
     [GeneratedRegex("""[\s\w]*Exception""", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex ExceptionThrown();
+    public static partial Regex ExceptionThrown();
 
     [GeneratedRegex("""Object reference not set.*object""", RegexOptions.IgnoreCase, 1000)]
-    private static partial Regex NullReferenceExceptionThrown();
+    public static partial Regex NullReferenceExceptionThrown();
 }
