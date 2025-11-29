@@ -14,6 +14,8 @@ public static partial class LogAnalyzer
             new BepinexLoadedPluginsJob(),
             topIssuesJob = new TopIssuesJob(),
             new HomebreweryJob(topIssuesJob),
+            new CustomQuestsJob(topIssuesJob),
+            new MapLoaderJob(topIssuesJob),
             //new LogLineDebugJob(),
         ];
     }

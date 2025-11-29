@@ -6,11 +6,22 @@ namespace BepinexLogAnalysis.Jobs;
 
 public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
 {
+    [GeneratedRegex("""(.*) : (.*) => JSON parse error: (.*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex JsonParseError();
+
+    [GeneratedRegex("""(.*?) (\S*) (?:name )?invalid: ([\S\ ]*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ThingInvalid();
+
+    [GeneratedRegex("""(.*) - Glb file returned more than one mesh, we only want one!""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex MultipleMeshes();
+
     private readonly TopIssuesJob _topIssuesJob = topIssuesJob;
 
     // Type => Thing Name => Asset Name
     private readonly Dictionary<string, Dictionary<string, string>> _brokenStuff = [];
     private readonly List<string> _multipleMeshes = [];
+    private bool _encounteredLogLines = false;
+    private bool _encounteredIssues = false;
 
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
@@ -20,7 +31,9 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
         if (!context.TryGetValue("game", out var game) && game != KnownGames.Atlyss)
             return;
 
-        Match invalidMatch = AtlyssMatchers.HomebreweryThingInvalid().Match(line.Contents);
+        _encounteredLogLines = true;
+
+        Match invalidMatch = ThingInvalid().Match(line.Contents);
 
         if (invalidMatch.Success)
         {
@@ -33,32 +46,58 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
 
             assetStuff[objName] = assetName;
             _topIssuesJob.RemoveLineFromScoring(line);
+            _encounteredIssues = true;
             return;
         }
 
-        Match multipleMeshes = AtlyssMatchers.HomebreweryMultipleMeshes().Match(line.Contents);
+        Match multipleMeshes = MultipleMeshes().Match(line.Contents);
 
         if (multipleMeshes.Success)
         {
             _multipleMeshes.Add(multipleMeshes.Groups[1].Value);
             _topIssuesJob.RemoveLineFromScoring(line);
+            _encounteredIssues = true;
+            return;
+        }
+
+        Match jsonParseError = JsonParseError().Match(line.Contents);
+
+        if (jsonParseError.Success)
+        {
+            var objName = jsonParseError.Groups[2].Value;
+            var error = jsonParseError.Groups[3].Value;
+
+            if (!_brokenStuff.TryGetValue("JSON", out var assetStuff))
+                assetStuff = _brokenStuff["JSON"] = [];
+
+            assetStuff[objName] = error;
+            _topIssuesJob.RemoveLineFromScoring(line);
+            _encounteredIssues = true;
             return;
         }
     }
 
     public void OutputResults(StreamWriter stream)
     {
-        if (_brokenStuff.Count == 0)
+        if (!_encounteredLogLines)
             return;
 
         stream.WriteLine("--- Homebrewery Issues ---");
         stream.WriteLine();
+
+        if (!_encounteredIssues)
+        {
+            stream.WriteLine("...no issues found!");
+            stream.WriteLine();
+            return;
+        }
 
         foreach (var objType in _brokenStuff.OrderBy(x => x.Key))
         {
             stream.Write("Invalid ");
             stream.Write(MapAssetName(objType.Key));
             stream.WriteLine(':');
+            stream.WriteLine();
 
             foreach (var objName in objType.Value.OrderBy(x => x.Key))
             {
@@ -91,6 +130,8 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
     {
         _brokenStuff.Clear();
         _multipleMeshes.Clear();
+        _encounteredLogLines = false;
+        _encounteredIssues = false;
     }
 
     public void OnLogBegin()
@@ -124,7 +165,7 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
         "_drawSound" => "draw sound",
         "_swingSound" => "swing sound",
         "_hitSound" => "hit sound",
-        "_weaponProjectileSet" => "",
+        "_weaponProjectileSet" => "weapon projectile set",
         "cond1name" => "condition name",
         "cond2name" => "condition name",
         "cond3name" => "condition name",

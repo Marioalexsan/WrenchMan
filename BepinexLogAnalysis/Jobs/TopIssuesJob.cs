@@ -1,4 +1,5 @@
 ﻿using BepinexLogAnalysis.SeverityRules;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace BepinexLogAnalysis.Jobs;
@@ -18,6 +19,7 @@ public partial class TopIssuesJob : IJob
 
     private readonly List<(LogLine Line, float Score)> _scoredMessages = [];
     private readonly HashSet<int> _processedMessages = [];
+    private readonly HashSet<int> _bannedMessages = [];
 
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
@@ -44,31 +46,15 @@ public partial class TopIssuesJob : IJob
 
     public void RemoveLineFromScoring(LogLine line)
     {
-        if (_scoredMessages.Count == 0)
-            return;
-
-        var lastLine = _scoredMessages.Last().Line;
-
-        var lineHashCode = HashCode.Combine(line.Source, line.Contents);
-        var lastLineHashCode = HashCode.Combine(lastLine.Source, lastLine.Contents);
-
-        if (lastLineHashCode != lineHashCode)
-        {
-            Console.WriteLine("WARN: couldn't find log line to modify score for!");
-            return;
-        }
-
-        _scoredMessages[^1] = new()
-        {
-            Line = lastLine,
-            Score = -999
-        };
+        var hashCode = HashCode.Combine(line.Source, line.Contents);
+        _processedMessages.Add(hashCode);
+        _bannedMessages.Add(hashCode);
     }
 
     public void OutputResults(StreamWriter stream)
     {
         var topIssues = _scoredMessages
-            .Where(x => x.Score > MinimumScore)
+            .Where(x => x.Score > MinimumScore && !_bannedMessages.Contains(HashCode.Combine(x.Line.Source, x.Line.Contents)))
             .OrderByDescending(x => x.Score)
             .Take(MaxTopIssues);
 
@@ -102,6 +88,7 @@ public partial class TopIssuesJob : IJob
     {
         _scoredMessages.Clear();
         _processedMessages.Clear();
+        _bannedMessages.Clear();
     }
 
     public void OnLogBegin()

@@ -7,10 +7,10 @@ public static partial class GenericMatchers
 {
     public static readonly SeverityRule[] All = [
         new(BepinexMultipleLoads(), 6),
-        new(BepinexMismatchedVersion(), -15),
-        new(SetCurveOnNonLegacyAnimationClips(), -15),
+        new(BepinexMismatchedVersion(), -15), // Don't care
         new(ExceptionThrown(), 15),
         new(NullReferenceExceptionThrown(), 4),
+        new(SetCurveOnNonLegacyAnimationClips(), -15), // Don't care
     ];
 
     [GeneratedRegex("""skipping.*version exists""", RegexOptions.IgnoreCase, 1000)]
