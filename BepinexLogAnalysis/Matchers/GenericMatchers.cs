@@ -8,8 +8,9 @@ public static partial class GenericMatchers
     public static readonly SeverityRule[] All = [
         new(BepinexMultipleLoads(), 6),
         new(BepinexMismatchedVersion(), -15),
+        new(SetCurveOnNonLegacyAnimationClips(), -15),
         new(ExceptionThrown(), 15),
-        new(NullReferenceExceptionThrown(), 4)
+        new(NullReferenceExceptionThrown(), 4),
     ];
 
     [GeneratedRegex("""skipping.*version exists""", RegexOptions.IgnoreCase, 1000)]
@@ -23,4 +24,7 @@ public static partial class GenericMatchers
 
     [GeneratedRegex("""Object reference not set.*object""", RegexOptions.IgnoreCase, 1000)]
     public static partial Regex NullReferenceExceptionThrown();
+
+    [GeneratedRegex("""Can't use AnimationClip::SetCurve at Runtime on non Legacy AnimationClips""", RegexOptions.IgnoreCase, 1000)]
+    public static partial Regex SetCurveOnNonLegacyAnimationClips();
 }

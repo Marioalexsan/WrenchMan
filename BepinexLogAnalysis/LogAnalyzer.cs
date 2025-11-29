@@ -5,12 +5,18 @@ namespace BepinexLogAnalysis;
 
 public static partial class LogAnalyzer
 {
-    private static IJob[] CreatePipeline() => [
-        new LogContextJob(),
-        new BepinexLoadedPluginsJob(),
-        new TopIssuesJob(),
-        //new LogLineDebugJob()
-    ];
+    private static IJob[] CreatePipeline()
+    {
+        TopIssuesJob topIssuesJob;
+
+        return [
+            new LogContextJob(),
+            new BepinexLoadedPluginsJob(),
+            topIssuesJob = new TopIssuesJob(),
+            new HomebreweryJob(topIssuesJob),
+            //new LogLineDebugJob(),
+        ];
+    }
 
     // TODO: No idea if this regex is evil or not
     [GeneratedRegex("""\[(debug|info|warning|message|fatal|error)\s*:\s*([^\]]+)\]\s?(.*?)(?=(?:\n\[|\z))""", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]

@@ -18,4 +18,10 @@ public static partial class AtlyssMatchers
 
     [GeneratedRegex("""Waking up at (\S*) (\S*) (AM|PM) UTC\.\.\. Game Version is: ([\S\ ]*)""", RegexOptions.IgnoreCase, 1000)]
     public static partial Regex HomebreweryWakeup();
+
+    [GeneratedRegex("""(.*?) (\S*) (?:name )?invalid: ([\S\ ]*)""", RegexOptions.IgnoreCase, 1000)]
+    public static partial Regex HomebreweryThingInvalid();
+
+    [GeneratedRegex("""(.*) - Glb file returned more than one mesh, we only want one!""", RegexOptions.IgnoreCase, 1000)]
+    public static partial Regex HomebreweryMultipleMeshes();
 }

@@ -1,6 +1,4 @@
-﻿using BepinexLogAnalysis;
-
-namespace WrenchMan;
+﻿namespace WrenchMan;
 
 internal class Program
 {

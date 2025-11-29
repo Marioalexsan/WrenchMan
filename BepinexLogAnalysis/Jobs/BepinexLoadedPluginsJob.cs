@@ -11,7 +11,7 @@ public partial class BepinexLoadedPluginsJob : IJob
 
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
-        if (line.Source != "BepInEx")
+        if (line.Source != KnownSources.BepInEx)
             return;
 
         Match loadMatch = LoadedPluginRegex().Match(line.Contents);
@@ -29,10 +29,16 @@ public partial class BepinexLoadedPluginsJob : IJob
         stream.WriteLine("--- Loaded plugins ---");
         stream.WriteLine();
 
+        var fieldWidth = _loadedPlugins.Max(x => x.Key.Length);
+
         foreach (var plugin in _loadedPlugins.OrderBy(x => x.Key))
         {
             stream.Write(plugin.Key);
-            stream.Write(" - ");
+
+            for (int i = plugin.Key.Length; i < fieldWidth; i++)
+                stream.Write(' ');
+            
+            stream.Write(' ');
             stream.Write(plugin.Value);
             stream.WriteLine();
         }

@@ -9,7 +9,7 @@ public enum MatcherTarget
     Contents
 }
 
-public record struct SeverityRule(Regex Matcher, float Score, MatcherTarget Target = MatcherTarget.Contents);
+public record struct SeverityRule(Regex Matcher, float Score, MatcherTarget Target = MatcherTarget.Contents, string? ExpectedSource = null);
 
 public partial class TopIssuesJob : IJob
 {
@@ -42,6 +42,29 @@ public partial class TopIssuesJob : IJob
         });
     }
 
+    public void RemoveLineFromScoring(LogLine line)
+    {
+        if (_scoredMessages.Count == 0)
+            return;
+
+        var lastLine = _scoredMessages.Last().Line;
+
+        var lineHashCode = HashCode.Combine(line.Source, line.Contents);
+        var lastLineHashCode = HashCode.Combine(lastLine.Source, lastLine.Contents);
+
+        if (lastLineHashCode != lineHashCode)
+        {
+            Console.WriteLine("WARN: couldn't find log line to modify score for!");
+            return;
+        }
+
+        _scoredMessages[^1] = new()
+        {
+            Line = lastLine,
+            Score = -999
+        };
+    }
+
     public void OutputResults(StreamWriter stream)
     {
         var topIssues = _scoredMessages
@@ -60,15 +83,15 @@ public partial class TopIssuesJob : IJob
 
         foreach (var (Line, Score) in topIssues)
         {
+            stream.Write("  ");
             stream.Write(Line.Source);
             stream.Write(" - ");
             stream.Write(Line.LogLevel);
             stream.Write(" (");
             stream.Write(Score);
-            stream.Write(") ");
-            stream.WriteLine(Line.Source);
-            stream.Write("Content: ");
-            stream.WriteLine(Line.Contents);
+            stream.Write(") Line #");
+            stream.WriteLine(Line.Line);
+            stream.WriteLine(Line.Contents.Trim().Replace("\n", "\n  "));
             stream.WriteLine();
         }
 
@@ -97,6 +120,9 @@ public partial class TopIssuesJob : IJob
 
         foreach (var rule in rules)
         {
+            if (rule.ExpectedSource != null && rule.ExpectedSource != line.Source)
+                continue;
+
             if (rule.Matcher.Match(rule.Target == MatcherTarget.Contents ? line.Contents : line.Source).Success)
                 score += rule.Score;
         }

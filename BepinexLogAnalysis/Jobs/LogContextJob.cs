@@ -21,7 +21,7 @@ public partial class LogContextJob : IJob
 
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
-        if (line.Line == 1 && line.Source == "BepInEx")
+        if (line.Line == 1 && line.Source == KnownSources.BepInEx)
         {
             // Check if we can extract the game and BepInEx version
             Match gameMatch = LogStartRegex().Match(line.Contents);
@@ -35,9 +35,10 @@ public partial class LogContextJob : IJob
             return;
         }
 
-        if (_game == "ATLYSS")
+        if (_game == KnownGames.Atlyss)
         {
-            if (_gameStartTime == "Unknown" && line.Source == "Homebrewery")
+            // Homebrewery logs the startup time, which we can use to deduce when the log was taken
+            if (_gameStartTime == "Unknown" && line.Source == KnownSources.Homebrewery)
             {
                 Match wakeupCall = AtlyssMatchers.HomebreweryWakeup().Match(line.Contents);
 
@@ -57,18 +58,18 @@ public partial class LogContextJob : IJob
         stream.WriteLine("--- Metadata ---");
         stream.WriteLine();
 
-        stream.Write("Game: ");
+        stream.Write("Game              ");
         stream.WriteLine(_game);
-        stream.Write("Game version: ");
+        stream.Write("Game version      ");
         stream.WriteLine(_gameVersion);
 
-        stream.Write("BepInEx version: ");
+        stream.Write("BepInEx version   ");
         stream.WriteLine(_bepinexVersion);
 
-        stream.Write("Log timestamp: ");
+        stream.Write("Log timestamp     ");
         stream.WriteLine(_gameStartTime);
 
-        stream.Write("Log processing time: ");
+        stream.Write("Log processed in  ");
         stream.Write((_endTime - _startTime).TotalMilliseconds);
         stream.WriteLine("ms");
 
