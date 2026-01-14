@@ -9,6 +9,8 @@ public partial class BepinexLoadedPluginsJob : IJob
 
     private readonly Dictionary<string, Version> _loadedPlugins = [];
 
+    public bool HasAnyPlugins => _loadedPlugins.Count > 0;
+
     public void ProcessLog(LogLine line, Dictionary<string, string> context)
     {
         if (line.Source != KnownSources.BepInEx)
@@ -28,6 +30,13 @@ public partial class BepinexLoadedPluginsJob : IJob
     {
         stream.WriteLine("--- Loaded plugins ---");
         stream.WriteLine();
+
+        if (_loadedPlugins.Count == 0)
+        {
+            stream.WriteLine("...no plugins found! Is this a valid log file?");
+            stream.WriteLine();
+            return;
+        }
 
         var fieldWidth = _loadedPlugins.Max(x => x.Key.Length);
 

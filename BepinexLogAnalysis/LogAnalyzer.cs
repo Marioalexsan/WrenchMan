@@ -5,13 +5,13 @@ namespace BepinexLogAnalysis;
 
 public static partial class LogAnalyzer
 {
-    private static IJob[] CreatePipeline()
+    private static IJob[] CreatePipeline(out BepinexLoadedPluginsJob loadedPluginsJob)
     {
         TopIssuesJob topIssuesJob;
 
         return [
             new LogContextJob(),
-            new BepinexLoadedPluginsJob(),
+            loadedPluginsJob = new BepinexLoadedPluginsJob(),
             topIssuesJob = new TopIssuesJob(),
             new HomebreweryJob(topIssuesJob),
             new CustomQuestsJob(topIssuesJob),
@@ -24,11 +24,11 @@ public static partial class LogAnalyzer
     [GeneratedRegex("""\[(debug|info|warning|message|fatal|error)\s*:\s*([^\]]+)\]\s?(.*?)(?=(?:\n\[|\z))""", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
     private static partial Regex LogLineRegex();
 
-    public static async Task ProcessLogAsync(Stream input, Stream output, CancellationToken cancellationToken)
+    public static async Task<bool> ProcessLogAsync(Stream input, Stream output, CancellationToken cancellationToken)
     {
         var start = DateTime.UtcNow;
 
-        var pipeline = CreatePipeline();
+        var pipeline = CreatePipeline(out var loadedPluginsJob);
 
         var logLineRegex = LogLineRegex();
 
@@ -57,11 +57,15 @@ public static partial class LogAnalyzer
         foreach (var job in pipeline)
             job.OnLogEnd();
 
+        if (!loadedPluginsJob.HasAnyPlugins)
+            return false;
+
         using var writer = new StreamWriter(output, leaveOpen: true);
 
         foreach (var job in pipeline)
             job.OutputResults(writer);
 
         await writer.FlushAsync(cancellationToken);
+        return true;
     }
 }
