@@ -86,27 +86,18 @@ internal class WrenchManBot : IDisposable
             Config = _logAnalyzerConfig,
             LogMethod = (level, logMessage) =>
             {
-                switch (level)
+                Action<string, string> logger = level switch
                 {
-                    case LogLevel.Fatal:
-                        Program.Fatal(nameof(LogAnalyzer), logMessage);
-                        break;
-                    case LogLevel.Error:
-                        Program.Error(nameof(LogAnalyzer), logMessage);
-                        break;
-                    case LogLevel.Warn:
-                        Program.Warn(nameof(LogAnalyzer), logMessage);
-                        break;
-                    case LogLevel.Info:
-                        Program.Info(nameof(LogAnalyzer), logMessage);
-                        break;
-                    case LogLevel.Debug:
-                        Program.Debug(nameof(LogAnalyzer), logMessage);
-                        break;
-                    case LogLevel.Trace:
-                        Program.Trace(nameof(LogAnalyzer), logMessage);
-                        break;
-                }
+                    LogLevel.Fatal => Program.Fatal,
+                    LogLevel.Error => Program.Error,
+                    LogLevel.Warn => Program.Warn,
+                    LogLevel.Info => Program.Info,
+                    LogLevel.Debug => Program.Debug,
+                    LogLevel.Trace => Program.Trace,
+                    _ => (_, _) => { }
+                };
+
+                logger(nameof(LogAnalyzer), logMessage);
             } 
         });
         
@@ -263,28 +254,18 @@ internal class WrenchManBot : IDisposable
 
     private Task SocketLog(LogMessage message)
     {
-        switch (message.Severity)
+        Action<string, string> logger = message.Severity switch
         {
-            case LogSeverity.Critical:
-                Program.Fatal("Discord", $"[{message.Source}] {message.Message}");
-                break;
-            case LogSeverity.Error:
-                Program.Error("Discord", $"[{message.Source}] {message.Message}");
-                break;
-            case LogSeverity.Warning:
-                Program.Warn("Discord", $"[{message.Source}] {message.Message}");
-                break;
-            case LogSeverity.Info:
-                Program.Info("Discord", $"[{message.Source}] {message.Message}");
-                break;
-            case LogSeverity.Debug:
-                Program.Debug("Discord", $"[{message.Source}] {message.Message}");
-                break;
-            case LogSeverity.Verbose:
-                Program.Trace("Discord", $"[{message.Source}] {message.Message}");
-                break;
-        }
+            LogSeverity.Critical => Program.Fatal,
+            LogSeverity.Error => Program.Error,
+            LogSeverity.Warning => Program.Warn,
+            LogSeverity.Info => Program.Info,
+            LogSeverity.Debug => Program.Debug,
+            LogSeverity.Verbose => Program.Trace,
+            _ => (_, _) => { }
+        };
 
+        logger("Discord", message.ToString());
         return Task.CompletedTask;
     }
 
