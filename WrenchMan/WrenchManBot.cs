@@ -8,15 +8,7 @@ namespace WrenchMan;
 
 internal class WrenchManBot : IDisposable
 {
-    private const GatewayIntents Intents = GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers & ~GatewayIntents.GuildInvites & ~GatewayIntents.GuildScheduledEvents;
-
-    protected readonly DiscordSocketClient SocketClient = new(new DiscordSocketConfig
-    {
-        MessageCacheSize = 100,
-        LogLevel = LogSeverity.Info,
-        AlwaysDownloadUsers = true,
-        GatewayIntents = Intents,
-    });
+    protected readonly DiscordSocketClient? SocketClient;
 
     public static string BasePath { get; } = Directory.GetCurrentDirectory();
     public static string ConfigPath { get; } = Path.Combine(BasePath, "config");
@@ -28,6 +20,9 @@ internal class WrenchManBot : IDisposable
 
     private readonly WrenchConfig _config;
     private readonly Dictionary<string, GuildSettings> _guildConfigs = [];
+    private readonly LogAnalyzerConfig _logAnalyzerConfig;
+
+    private readonly LogAnalyzer _logAnalyzer;
 
     private GuildSettings GetConfigForGuild(string guildId)
     {
@@ -35,7 +30,7 @@ internal class WrenchManBot : IDisposable
         {
             _guildConfigs[guildId] = config = new GuildSettings();
             File.WriteAllText(GuildConfigPath(guildId), JsonSerializer.Serialize(config));
-            Console.WriteLine($"Initialized new guild config for guild {guildId}");
+            Program.Info(nameof(WrenchManBot), $"Initialized new guild config for guild {guildId}");
         }
 
         return config;
@@ -45,7 +40,7 @@ internal class WrenchManBot : IDisposable
     {
         if (!Directory.Exists(ConfigPath))
             Directory.CreateDirectory(ConfigPath);
-        
+
         if (!Directory.Exists(GuildConfigsFolderPath))
             Directory.CreateDirectory(GuildConfigsFolderPath);
 
@@ -58,19 +53,6 @@ internal class WrenchManBot : IDisposable
             _config = JsonSerializer.Deserialize<WrenchConfig>(File.ReadAllText(GlobalConfigPath)) ?? throw new NullReferenceException("Config was null");
         }
 
-        string? token = Environment.GetEnvironmentVariable("WRENCHMAN_AUTH");
-
-        if (token == null && File.Exists(_config.TokenFilePath))
-        {
-            token = File.ReadAllText(_config.TokenFilePath);
-        }
-
-        if (token == null)
-        {
-            Console.WriteLine("Couldn't find token!");
-            return;
-        }
-        
         foreach (var file in Directory.EnumerateFiles(GuildConfigsFolderPath, "*.json"))
         {
             var guildId = Path.GetFileNameWithoutExtension(file);
@@ -79,6 +61,76 @@ internal class WrenchManBot : IDisposable
             Console.WriteLine($"Loaded guild config settings for guild {guildId}");
         }
 
+        if (!File.Exists(_config.Settings.BepInExLogAnalysisRootConfigPath))
+        {
+            var matchersPath = Path.Combine(ConfigPath, "scoring_job_matchers");
+
+            if (!Directory.Exists(matchersPath))
+                Directory.CreateDirectory(matchersPath);
+            
+            File.WriteAllText(_config.Settings.BepInExLogAnalysisRootConfigPath, JsonSerializer.Serialize(_logAnalyzerConfig = new()
+            {
+                ScoringMatcherPaths = [
+                    Path.Combine(matchersPath, "_global.json"),
+                    Path.Combine(matchersPath, "atlyss.json"),
+                ]
+            }));
+        }
+        else
+        {
+            _logAnalyzerConfig = JsonSerializer.Deserialize<LogAnalyzerConfig>(File.ReadAllText(_config.Settings.BepInExLogAnalysisRootConfigPath)) ?? throw new NullReferenceException("Log analysis config was null");
+        }
+        
+        _logAnalyzer = new LogAnalyzer(new LogAnalyzerOptions()
+        {
+            Config = _logAnalyzerConfig,
+            LogMethod = (level, logMessage) =>
+            {
+                switch (level)
+                {
+                    case LogLevel.Fatal:
+                        Program.Fatal(nameof(LogAnalyzer), logMessage);
+                        break;
+                    case LogLevel.Error:
+                        Program.Error(nameof(LogAnalyzer), logMessage);
+                        break;
+                    case LogLevel.Warn:
+                        Program.Warn(nameof(LogAnalyzer), logMessage);
+                        break;
+                    case LogLevel.Info:
+                        Program.Info(nameof(LogAnalyzer), logMessage);
+                        break;
+                    case LogLevel.Debug:
+                        Program.Debug(nameof(LogAnalyzer), logMessage);
+                        break;
+                    case LogLevel.Trace:
+                        Program.Trace(nameof(LogAnalyzer), logMessage);
+                        break;
+                }
+            } 
+        });
+        
+        string? token = Environment.GetEnvironmentVariable("WRENCHMAN_AUTH");
+
+        if (token == null && File.Exists(_config.TokenFilePath))
+        {
+            token = File.ReadAllText(_config.TokenFilePath);
+        }
+        
+        if (token == null)
+        {
+            Program.Warn(nameof(WrenchManBot), "Couldn't load Discord token for bot!");
+            return;
+        }
+
+        SocketClient = new DiscordSocketClient(new DiscordSocketConfig
+        {
+            MessageCacheSize = 100,
+            LogLevel = LogSeverity.Warning,
+            AlwaysDownloadUsers = true,
+            GatewayIntents = (GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers) & ~GatewayIntents.GuildInvites & ~GatewayIntents.GuildScheduledEvents,
+        });
+
         SocketClient.GuildAvailable += GuildAvailable;
         SocketClient.GuildUnavailable += GuildUnavailable;
         SocketClient.Log += SocketLog;
@@ -86,7 +138,8 @@ internal class WrenchManBot : IDisposable
         SocketClient.MessageReceived += OnMessageReceived;
         SocketClient.SlashCommandExecuted += OnSlashCommand;
         SocketClient.Connected += OnConnected;
-
+        SocketClient.Disconnected += OnDisconnected;
+        
         SocketClient.LoginAsync(TokenType.Bot, token);
         SocketClient.StartAsync();
     }
@@ -94,12 +147,19 @@ internal class WrenchManBot : IDisposable
     public void Dispose()
     {
         SocketClient?.Dispose();
-        HttpClient?.Dispose();
+        HttpClient.Dispose();
     }
 
-    private async Task OnConnected()
+    private Task OnConnected()
     {
-        Console.WriteLine("Connected!");
+        Program.Info(nameof(WrenchManBot), "Connected to Discord!");
+        return Task.CompletedTask;
+    }
+
+    private Task OnDisconnected(Exception error)
+    {
+        Program.Info(nameof(WrenchManBot), $"Got disconnected from Discord! {error.Message}");
+        return Task.CompletedTask;
     }
 
     private async Task OnSlashCommand(SocketSlashCommand command)
@@ -111,12 +171,12 @@ internal class WrenchManBot : IDisposable
     {
         if (message.Author.IsBot || message.Author.IsWebhook || message.Source == MessageSource.System)
             return;
-        
+
         var channelType = message.Channel.GetChannelType();
 
         if (channelType == ChannelType.DM && !_config.Settings.LogAnalyzer.LookInDirectMessages)
             return;
-        
+
         if (message.Channel is SocketGuildChannel guildChannel)
         {
             var settings = GetConfigForGuild(guildChannel.Guild.Id.ToString()).LogAnalyzer;
@@ -143,21 +203,21 @@ internal class WrenchManBot : IDisposable
         List<string> fileNames = [];
 
         int totalSize = 0;
-        
+
         foreach (var item in message.Attachments)
         {
             if (!(item.Filename.EndsWith(".log") || item.Filename.EndsWith(".txt")))
                 continue;
 
             totalSize += item.Size;
-            
+
             fileUrls.Add(item.Url);
             fileNames.Add(item.Filename);
         }
 
         if (fileUrls.Count == 0)
             return;
-        
+
         if (totalSize >= 1024 * 1024 * 20)
         {
             await message.Channel.SendMessageAsync("Sorry, I can only parse logs that have a total size of at most 20 MiB!");
@@ -169,7 +229,23 @@ internal class WrenchManBot : IDisposable
 
         var attachments = await Task.WhenAll(tasks);
 
-        Console.WriteLine($"Processing {attachments.Length} logs ({totalSize / 1024} KiB) from {message.Author.Username} in channel {message.Channel.Name} ({message.Channel.Id})...");
+        if (_config.LogUserAndLocationDetails)
+        {
+            var messageAuthorInfo = $"{message.Author.Username} ({message.Author.Id})";
+
+            var messageLocationInfo = message.Channel switch
+            {
+                IGuildChannel fromGuild => $"{message.Channel.Name} ({message.Channel.Id}), {fromGuild.Guild.Name} ({fromGuild.Guild.Id})",
+                IDMChannel _ => $"in direct messages",
+                _ => $"unknown DM / server ({message.Channel.GetType()})"
+            };
+            
+            Program.Info(nameof(WrenchManBot), $"Processing {attachments.Length} logs ({totalSize / 1024} KiB) from {messageAuthorInfo} in {messageLocationInfo}...");
+        }
+        else
+        {
+            Program.Info(nameof(WrenchManBot), $"Processing {attachments.Length} logs ({totalSize / 1024} KiB) from a request...");
+        }
 
         for (int i = 0; i < attachments.Length; i++)
         {
@@ -178,26 +254,48 @@ internal class WrenchManBot : IDisposable
             if (data == null)
                 continue;
 
-            Console.WriteLine($"Analyzing attachment {fileNames[i]}...");
+            Program.Info(nameof(WrenchManBot), $"Analyzing attachment {fileNames[i]}...");
 
             var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
             await ProcessAttachment(message, fileNames[i], stream);
         }
     }
 
-    private async Task SocketLog(LogMessage message)
+    private Task SocketLog(LogMessage message)
     {
-        Console.WriteLine(message.ToString());
+        switch (message.Severity)
+        {
+            case LogSeverity.Critical:
+                Program.Fatal("Discord", $"[{message.Source}] {message.Message}");
+                break;
+            case LogSeverity.Error:
+                Program.Error("Discord", $"[{message.Source}] {message.Message}");
+                break;
+            case LogSeverity.Warning:
+                Program.Warn("Discord", $"[{message.Source}] {message.Message}");
+                break;
+            case LogSeverity.Info:
+                Program.Info("Discord", $"[{message.Source}] {message.Message}");
+                break;
+            case LogSeverity.Debug:
+                Program.Debug("Discord", $"[{message.Source}] {message.Message}");
+                break;
+            case LogSeverity.Verbose:
+                Program.Trace("Discord", $"[{message.Source}] {message.Message}");
+                break;
+        }
+
+        return Task.CompletedTask;
     }
 
-    private async Task GuildUnavailable(SocketGuild guild)
+    private Task GuildUnavailable(SocketGuild guild)
     {
-
+        return Task.CompletedTask;
     }
 
-    private async Task GuildAvailable(SocketGuild guild)
+    private Task GuildAvailable(SocketGuild guild)
     {
-
+        return Task.CompletedTask;
     }
 
     protected async Task<string?> FetchAsync(string url)
@@ -212,7 +310,7 @@ internal class WrenchManBot : IDisposable
         }
         catch (HttpRequestException)
         {
-            Console.WriteLine($"Failed to fetch resource from {url}");
+            Program.Error(nameof(WrenchManBot), $"Failed to fetch resource from {url}");
             return null;
         }
     }
@@ -222,18 +320,19 @@ internal class WrenchManBot : IDisposable
         var minimumProcessingTime = Task.Delay(750);
 
         MemoryStream output = new();
-        bool success = await LogAnalyzer.ProcessLogAsync(attachment, output, CancellationToken.None);
+
+        bool success = await _logAnalyzer.ProcessLogAsync(attachment, output, CancellationToken.None);
         await minimumProcessingTime;
 
         if (!success)
         {
-            Console.WriteLine($"File {fileName} doesn't seem like it's a log, skipping it.");
+            Program.Info(nameof(WrenchManBot), $"File {fileName} doesn't seem like it's a log, skipping it.");
         }
         else
         {
             output.Position = 0;
             await message.Channel.SendFileAsync(output, "Report.txt", "Here's a summary of your log file!");
-            Console.WriteLine($"Sent summary for {fileName}.");
+            Program.Info(nameof(WrenchManBot), $"Sent summary for {fileName}.");
         }
     }
 }

@@ -1,15 +1,18 @@
 ﻿namespace BepinexLogAnalysis.Jobs;
 
-public partial class LogLineDebugJob : IJob
+public class LogLineDebugJob : IJob
 {
     private readonly List<LogLine> _logLines = [];
 
-    public void ProcessLog(LogLine line, Dictionary<string, string> context)
+    public bool ExtractedAnyData => false; // Ignore this job for purposes of log file detection
+
+    public bool ProcessLog(LogContext context, LogLine line)
     {
         _logLines.Add(line);
+        return true;
     }
 
-    public void OutputResults(StreamWriter stream)
+    public void OutputResults(LogContext context, StreamWriter stream)
     {
         stream.WriteLine("--- Log debug ---");
 
@@ -26,17 +29,17 @@ public partial class LogLineDebugJob : IJob
         stream.WriteLine();
     }
 
-    public void Reset()
+    public void Reset(LogContext context)
     {
         _logLines.Clear();
     }
 
-    public void OnLogBegin()
+    public void OnLogBegin(LogContext context)
     {
         // Nothing
     }
 
-    public void OnLogEnd()
+    public void OnLogEnd(LogContext context)
     {
         // Nothing
     }

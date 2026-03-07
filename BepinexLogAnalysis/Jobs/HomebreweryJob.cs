@@ -1,10 +1,8 @@
-﻿using BepinexLogAnalysis.SeverityRules;
-using System.Data;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace BepinexLogAnalysis.Jobs;
 
-public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
+public partial class HomebreweryJob : IJob
 {
     [GeneratedRegex("""(.*) : (.*) => JSON parse error: (.*)""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex JsonParseError();
@@ -15,21 +13,25 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
     [GeneratedRegex("""(.*) - Glb file returned more than one mesh, we only want one!""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex MultipleMeshes();
 
-    private readonly TopIssuesJob _topIssuesJob = topIssuesJob;
+    [GeneratedRegex("""Processing: (\S*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex LoadingContentPack();
 
     // Type => Thing Name => Asset Name
     private readonly Dictionary<string, Dictionary<string, string>> _brokenStuff = [];
     private readonly List<string> _multipleMeshes = [];
-    private bool _encounteredLogLines = false;
-    private bool _encounteredIssues = false;
+    private bool _encounteredLogLines;
+    private bool _encounteredIssues;
+    private bool _foundContentPacks;
 
-    public void ProcessLog(LogLine line, Dictionary<string, string> context)
+    public bool ExtractedAnyData => _encounteredIssues || _foundContentPacks;
+
+    public bool ProcessLog(LogContext context, LogLine line)
     {
         if (line.Source != KnownSources.Homebrewery)
-            return;
+            return true;
 
-        if (!context.TryGetValue("game", out var game) && game != KnownGames.Atlyss)
-            return;
+        if (context.Game != KnownGames.Atlyss)
+            return true;
 
         _encounteredLogLines = true;
 
@@ -45,9 +47,8 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
                 assetStuff = _brokenStuff[objType] = [];
 
             assetStuff[objName] = assetName;
-            _topIssuesJob.RemoveLineFromScoring(line);
             _encounteredIssues = true;
-            return;
+            return false;
         }
 
         Match multipleMeshes = MultipleMeshes().Match(line.Contents);
@@ -55,9 +56,8 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
         if (multipleMeshes.Success)
         {
             _multipleMeshes.Add(multipleMeshes.Groups[1].Value);
-            _topIssuesJob.RemoveLineFromScoring(line);
             _encounteredIssues = true;
-            return;
+            return false;
         }
 
         Match jsonParseError = JsonParseError().Match(line.Contents);
@@ -71,13 +71,25 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
                 assetStuff = _brokenStuff["JSON"] = [];
 
             assetStuff[objName] = error;
-            _topIssuesJob.RemoveLineFromScoring(line);
             _encounteredIssues = true;
-            return;
+            return false;
         }
+
+        Match loadingContentPack = LoadingContentPack().Match(line.Contents);
+
+        if (loadingContentPack.Success)
+        {
+            var contentPackName = loadingContentPack.Groups[1].Value;
+            
+            context.AddPlugin("Homebrewery content packs", contentPackName, null);
+            _foundContentPacks = true;
+            return false;
+        }
+
+        return true;
     }
 
-    public void OutputResults(StreamWriter stream)
+    public void OutputResults(LogContext context, StreamWriter stream)
     {
         if (!_encounteredLogLines)
             return;
@@ -97,7 +109,6 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
             stream.Write("Invalid ");
             stream.Write(MapAssetName(objType.Key));
             stream.WriteLine(':');
-            stream.WriteLine();
 
             foreach (var objName in objType.Value.OrderBy(x => x.Key))
             {
@@ -126,20 +137,21 @@ public partial class HomebreweryJob(TopIssuesJob topIssuesJob) : IJob
         stream.WriteLine();
     }
 
-    public void Reset()
+    public void Reset(LogContext context)
     {
         _brokenStuff.Clear();
         _multipleMeshes.Clear();
         _encounteredLogLines = false;
         _encounteredIssues = false;
+        _foundContentPacks = false;
     }
 
-    public void OnLogBegin()
+    public void OnLogBegin(LogContext context)
     {
         // Nothing
     }
 
-    public void OnLogEnd()
+    public void OnLogEnd(LogContext context)
     {
         // Nothing
     }

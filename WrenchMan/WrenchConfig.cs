@@ -47,6 +47,8 @@ public class LogAnalyzerGlobalSettings
 /// </summary>
 public class GlobalSettings
 {
+    public string BepInExLogAnalysisRootConfigPath { get; set; } = Path.Combine("config", "bepinex_log_analysis.json");
+    
     public LogAnalyzerGlobalSettings LogAnalyzer { get; set; } = new();
 }
 
@@ -59,6 +61,11 @@ public class WrenchConfig
     /// The path to the file that contains the Discord bot token to use.
     /// </summary>
     public string TokenFilePath { get; set; } = ".wrenchman_token";
+
+    /// <summary>
+    /// Whenver to log the user, server and platform when logs are received.
+    /// </summary>
+    public bool LogUserAndLocationDetails { get; set; } = true;
 
     /// <summary>
     /// Global settings to use for the bot.

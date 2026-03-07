@@ -1,10 +1,8 @@
-﻿using BepinexLogAnalysis.SeverityRules;
-using System.Data;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace BepinexLogAnalysis.Jobs;
 
-public partial class CustomQuestsJob(TopIssuesJob topIssuesJob) : IJob
+public partial class CustomQuestsJob : IJob
 {
     [GeneratedRegex("""Quest "(.*)" not found!""", RegexOptions.IgnoreCase, 1000)]
     public static partial Regex QuestNotFound();
@@ -12,20 +10,20 @@ public partial class CustomQuestsJob(TopIssuesJob topIssuesJob) : IJob
     [GeneratedRegex("""Error while loading quest "(.*)" - Quest NOT loaded!""", RegexOptions.IgnoreCase, 1000)]
     public static partial Regex QuestFailedToLoad();
 
-    private readonly TopIssuesJob _topIssuesJob = topIssuesJob;
-
     private readonly List<string> _questsFailedToLoad = [];
     private readonly List<string> _questsNotFound = [];
     private bool _encounteredLogLines = false;
     private bool _encounteredIssues = false;
 
-    public void ProcessLog(LogLine line, Dictionary<string, string> context)
+    public bool ExtractedAnyData => _encounteredIssues;
+
+    public bool ProcessLog(LogContext context, LogLine line)
     {
         if (line.Source != KnownSources.CustomQuests)
-            return;
+            return true;
 
-        if (!context.TryGetValue("game", out var game) && game != KnownGames.Atlyss)
-            return;
+        if (context.Game != KnownGames.Atlyss)
+            return true;
 
         _encounteredLogLines = true;
 
@@ -34,9 +32,8 @@ public partial class CustomQuestsJob(TopIssuesJob topIssuesJob) : IJob
         if (questFailedToLoad.Success)
         {
             _questsFailedToLoad.Add(questFailedToLoad.Groups[1].Value);
-            _topIssuesJob.RemoveLineFromScoring(line);
             _encounteredIssues = true;
-            return;
+            return false;
         }
 
         Match questNotFound = QuestNotFound().Match(line.Contents);
@@ -44,15 +41,16 @@ public partial class CustomQuestsJob(TopIssuesJob topIssuesJob) : IJob
         if (questNotFound.Success)
         {
             _questsNotFound.Add(questNotFound.Groups[1].Value);
-            _topIssuesJob.RemoveLineFromScoring(line);
             _encounteredIssues = true;
-            return;
+            return false;
         }
+
+        return true;
     }
 
-    public void OutputResults(StreamWriter stream)
+    public void OutputResults(LogContext context, StreamWriter stream)
     {
-        if (!_encounteredIssues)
+        if (!_encounteredLogLines)
             return;
 
         stream.WriteLine("--- Custom Quests Issues ---");
@@ -96,19 +94,19 @@ public partial class CustomQuestsJob(TopIssuesJob topIssuesJob) : IJob
         }
     }
 
-    public void Reset()
+    public void Reset(LogContext context)
     {
         _questsNotFound.Clear();
         _encounteredLogLines = false;
         _encounteredIssues = false;
     }
 
-    public void OnLogBegin()
+    public void OnLogBegin(LogContext context)
     {
         // Nothing
     }
 
-    public void OnLogEnd()
+    public void OnLogEnd(LogContext context)
     {
         // Nothing
     }

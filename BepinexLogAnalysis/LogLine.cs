@@ -5,4 +5,7 @@ public record struct LogLine(
     string Source,
     string Contents,
     int Line
-);
+)
+{
+    public int GetDuplicateHashcode() => HashCode.Combine(LogLevel, Source, Contents);
+}

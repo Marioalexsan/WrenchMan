@@ -7,10 +7,21 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Discord.Net" Version="3.15.3" />
+        <PackageReference Include="Discord.Net" Version="3.15.3"/>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\BepinexLogAnalysis\BepinexLogAnalysis.csproj" />
+        <ProjectReference Include="..\BepinexLogAnalysis\BepinexLogAnalysis.csproj"/>
     </ItemGroup>
+    
+    <ItemGroup>
+        <ScoringJobMatchers Include="$(SolutionDir)BepinexLogAnalysis/Jobs/ScoringJob/Configuration/*.json" Visible="false"/>
+    </ItemGroup>
+    
+    <Target Name="CopyScoringMatchers" AfterTargets="AfterBuild">
+        <Copy
+                SourceFiles="@(ScoringJobMatchers)" 
+                DestinationFolder="$(OutputPath)/config/scoring_job_matchers"
+        />
+    </Target>
 </Project>
