@@ -14,14 +14,14 @@ internal class Program
     
     public static void Trace(string source, string message)
     {
-        Console.ForegroundColor = ConsoleColor.Gray;
+        Console.ForegroundColor = ConsoleColor.DarkBlue;
         Console.WriteLine($"[TRACE] [{source}] {message}");
         Console.ResetColor();
     }
     
     public static void Debug(string source, string message)
     {
-        Console.ForegroundColor = ConsoleColor.White;
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
         Console.WriteLine($"[DEBUG] [{source}] {message}");
         Console.ResetColor();
     }

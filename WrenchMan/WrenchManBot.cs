@@ -1,4 +1,5 @@
-﻿using BepinexLogAnalysis;
+﻿using System.Net.WebSockets;
+using BepinexLogAnalysis;
 using Discord;
 using Discord.WebSocket;
 using System.Text;
@@ -127,12 +128,82 @@ internal class WrenchManBot : IDisposable
         SocketClient.Log += SocketLog;
 
         SocketClient.MessageReceived += OnMessageReceived;
-        SocketClient.SlashCommandExecuted += OnSlashCommand;
+        SocketClient.SlashCommandExecuted += SlashCommandExecuted;
         SocketClient.Connected += OnConnected;
         SocketClient.Disconnected += OnDisconnected;
         
+        SocketClient.Ready += DiscordReady;
+        
         SocketClient.LoginAsync(TokenType.Bot, token);
         SocketClient.StartAsync();
+    }
+
+    private async Task SlashCommandExecuted(SocketSlashCommand cmd)
+    {
+        Program.Info(nameof(WrenchManBot), $"Processing command {cmd.Data.Name} from {cmd.User.Username} ({cmd.User.Id})...");
+        
+        switch (cmd.Data.Name)
+        {
+            case "analyze-log":
+                var attachment = (IAttachment)cmd.Data.Options.First().Value;
+                
+                if (attachment.Size >= 1024 * 1024 * 20)
+                {
+                    await cmd.RespondAsync("Sorry, I can only parse logs that have a total size of at most 20 MiB!", ephemeral: true);
+                    return;
+                }
+
+                await cmd.DeferAsync();
+
+                var data = await FetchAsync(attachment.Url);
+
+                if (data == null)
+                {
+                    await cmd.FollowupAsync("Failed to get the attachment file! (cc: <@320578056488222723>)", allowedMentions: new AllowedMentions(AllowedMentionTypes.Users));
+                    return;
+                }
+
+                Program.Info(nameof(WrenchManBot), $"Analyzing attachment {attachment.Filename}...");
+
+                var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+                var result = await ProcessAttachment(stream);
+
+                stream.Position = 0;
+                
+                if (result == null)
+                {
+                    Program.Info(nameof(WrenchManBot), $"File {attachment.Filename} doesn't seem like it's a log.");
+                    await cmd.FollowupAsync("That doesn't look like a valid log file! It should be a Player.log, or LogOutput.log file");
+                }
+                else
+                {
+                    var sanitizedLog = Sanitizer.Sanitize(stream);
+                    
+                    await cmd.FollowupWithFilesAsync([
+                        new FileAttachment(sanitizedLog, "SanitizedLog.txt"),
+                        new FileAttachment(result, "Report.txt")
+                    ], "Here's a summary of your log file!");
+                    Program.Info(nameof(WrenchManBot), $"Sent summary for {attachment.Filename}.");
+                }
+                
+                break;
+            default:
+                await cmd.RespondAsync("Uh, I don't know how to process that command...", ephemeral: true);
+                break;
+        }
+    }
+
+    private async Task DiscordReady()
+    {
+        var analyzeLogCommand = new SlashCommandBuilder()
+            .WithName("analyze-log")
+            .WithDescription("Extracts logs from arguments or a given message, and analyzes them.")
+            .AddOption("file", ApplicationCommandOptionType.Attachment, "Attach a log file to analyze.", isRequired: true)
+            .Build();
+        
+        await SocketClient!.BulkOverwriteGlobalApplicationCommandsAsync([
+            analyzeLogCommand
+        ]);
     }
 
     public void Dispose()
@@ -143,19 +214,14 @@ internal class WrenchManBot : IDisposable
 
     private Task OnConnected()
     {
-        Program.Info(nameof(WrenchManBot), "Connected to Discord!");
+        Program.Debug(nameof(WrenchManBot), "Connected to Discord!");
         return Task.CompletedTask;
     }
 
     private Task OnDisconnected(Exception error)
     {
-        Program.Info(nameof(WrenchManBot), $"Got disconnected from Discord! {error.Message}");
+        Program.Debug(nameof(WrenchManBot), $"Got disconnected from Discord! {error.Message}");
         return Task.CompletedTask;
-    }
-
-    private async Task OnSlashCommand(SocketSlashCommand command)
-    {
-        await command.RespondAsync("I don't have commands yet!", ephemeral: true);
     }
 
     private async Task OnMessageReceived(SocketMessage message)
@@ -248,12 +314,26 @@ internal class WrenchManBot : IDisposable
             Program.Info(nameof(WrenchManBot), $"Analyzing attachment {fileNames[i]}...");
 
             var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
-            await ProcessAttachment(message, fileNames[i], stream);
+            
+            var result = await ProcessAttachment(stream);
+
+            if (result == null)
+            {
+                Program.Info(nameof(WrenchManBot), $"File {fileNames[i]} doesn't seem like it's a log, skipping it.");
+            }
+            else
+            {
+                await message.Channel.SendFileAsync(result, "Report.txt", "Here's a summary of your log file!");
+                Program.Info(nameof(WrenchManBot), $"Sent summary for {fileNames[i]}.");
+            }
         }
     }
 
     private Task SocketLog(LogMessage message)
     {
+        if (message.Exception is GatewayReconnectException or WebSocketException)
+            return Task.CompletedTask; // Supress these since they're handled by the disconnect callback
+        
         Action<string, string> logger = message.Severity switch
         {
             LogSeverity.Critical => Program.Fatal,
@@ -274,9 +354,10 @@ internal class WrenchManBot : IDisposable
         return Task.CompletedTask;
     }
 
-    private Task GuildAvailable(SocketGuild guild)
+    private async Task GuildAvailable(SocketGuild guild)
     {
-        return Task.CompletedTask;
+        // No guild specific commands yet
+        await guild.BulkOverwriteApplicationCommandAsync([]);
     }
 
     protected async Task<string?> FetchAsync(string url)
@@ -296,10 +377,10 @@ internal class WrenchManBot : IDisposable
         }
     }
 
-    private async Task ProcessAttachment(SocketMessage message, string fileName, Stream attachment)
+    private async Task<Stream?> ProcessAttachment(Stream attachment)
     {
         var minimumProcessingTime = Task.Delay(750);
-
+        
         MemoryStream output = new();
 
         bool success = await _logAnalyzer.ProcessLogAsync(attachment, output, CancellationToken.None);
@@ -307,13 +388,12 @@ internal class WrenchManBot : IDisposable
 
         if (!success)
         {
-            Program.Info(nameof(WrenchManBot), $"File {fileName} doesn't seem like it's a log, skipping it.");
+            return null;
         }
         else
         {
             output.Position = 0;
-            await message.Channel.SendFileAsync(output, "Report.txt", "Here's a summary of your log file!");
-            Program.Info(nameof(WrenchManBot), $"Sent summary for {fileName}.");
+            return output;
         }
     }
 }
