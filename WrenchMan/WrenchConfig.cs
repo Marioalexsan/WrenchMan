@@ -28,6 +28,15 @@ public class LogAnalyzerGuildSettings
 /// </summary>
 public class GuildSettings
 {
+    /// <summary>
+    /// If true, the usage of this bot is disallowed in the given guild.
+    /// The bot will also attempt to remove itself from them.
+    /// </summary>
+    public bool Blacklisted { get; set; } = false;
+    
+    /// <summary>
+    /// Settings specific to the log analyzer functionality.
+    /// </summary>
     public LogAnalyzerGuildSettings LogAnalyzer { get; set; } = new();
 }
 
@@ -48,7 +57,7 @@ public class LogAnalyzerGlobalSettings
 public class GlobalSettings
 {
     public string BepInExLogAnalysisRootConfigPath { get; set; } = Path.Combine("config", "bepinex_log_analysis.json");
-    
+
     public LogAnalyzerGlobalSettings LogAnalyzer { get; set; } = new();
 }
 
@@ -61,6 +70,13 @@ public class WrenchConfig
     /// The path to the file that contains the Discord bot token to use.
     /// </summary>
     public string TokenFilePath { get; set; } = ".wrenchman_token";
+
+    /// <summary>
+    /// List of guild IDs that are allowed to invite the bot.
+    /// If not empty, the bot will try to leave guilds which invite it and are not whitelisted.
+    /// This only applies to new guilds; existing guilds will be unaffected.
+    /// </summary>
+    public string[] GuildWhitelist { get; set; } = [];
 
     /// <summary>
     /// Whenver to log the user, server and platform when logs are received.

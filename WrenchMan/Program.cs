@@ -15,28 +15,28 @@ internal class Program
     public static void Trace(string source, string message)
     {
         Console.ForegroundColor = ConsoleColor.DarkBlue;
-        Console.WriteLine($"[TRACE] [{source}] {message}");
+        Console.WriteLine($"[{DateTime.UtcNow.ToString("u")}] [TRACE] [{source}] {message}");
         Console.ResetColor();
     }
     
     public static void Debug(string source, string message)
     {
         Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.WriteLine($"[DEBUG] [{source}] {message}");
+        Console.WriteLine($"[{DateTime.UtcNow.ToString("u")}] [DEBUG] [{source}] {message}");
         Console.ResetColor();
     }
 
     public static void Info(string source, string message)
     {
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"[INFO] [{source}] {message}");
+        Console.WriteLine($"[{DateTime.UtcNow.ToString("u")}] [INFO] [{source}] {message}");
         Console.ResetColor();
     }
     
     public static void Warn(string source, string message)
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"[WARN] [{source}] {message}");
+        Console.WriteLine($"[{DateTime.UtcNow.ToString("u")}] [WARN] [{source}] {message}");
         Console.ResetColor();
     }
     
@@ -44,7 +44,7 @@ internal class Program
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.BackgroundColor = ConsoleColor.Red;
-        Console.Write($"[ERROR]");
+        Console.Write($"[{DateTime.UtcNow.ToString("u")}] [ERROR]");
         Console.ResetColor();
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine($"[{source}] {message}");
@@ -55,7 +55,7 @@ internal class Program
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.BackgroundColor = ConsoleColor.Red;
-        Console.Write($"[FATAL] [{source}] {message}");
+        Console.Write($"[{DateTime.UtcNow.ToString("u")}] [FATAL] [{source}] {message}");
         Console.ResetColor();
     }
 }
