@@ -89,12 +89,12 @@ public partial class LogAnalyzer
     [GeneratedRegex("""\[(debug|info|warning|message|fatal|error)\s*:\s*([^\]]+)\]\s?(.*?)(?=(?:\n\[|\z))""", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
     private static partial Regex LogLineRegex();
 
-    public async Task<bool> ProcessLogAsync(Stream input, Stream output, CancellationToken cancellationToken)
+    public async Task<bool> ProcessLogAsync(Stream input, Stream output, CancellationToken ct)
     {
         var logLineRegex = LogLineRegex();
 
         using var reader = new StreamReader(input, leaveOpen: true);
-        var log = await reader.ReadToEndAsync(cancellationToken);
+        var log = await reader.ReadToEndAsync(ct);
 
         int logLinesSoFar = 0;
 
@@ -131,7 +131,7 @@ public partial class LogAnalyzer
         foreach (var job in _jobs)
             job.OutputResults(context, writer);
 
-        await writer.FlushAsync(cancellationToken);
+        await writer.FlushAsync(ct);
         return true;
     }
 }

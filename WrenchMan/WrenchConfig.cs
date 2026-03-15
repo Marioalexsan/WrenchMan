@@ -6,21 +6,9 @@
 public class LogAnalyzerGuildSettings
 {
     /// <summary>
-    /// Whenever to search in threads for logs to parse, true by default.
+    /// Channel IDs in which to search for logs and reply automatically, without using an explicit command.
     /// </summary>
-    public bool LookInThreads { get; set; } = false;
-    
-    /// <summary>
-    /// Channel IDs in which to search for logs. Leave empty to search in all channels.
-    /// If channels are specified for both this and <see cref="BlacklistedChannels"/>, the whitelist takes priority.
-    /// </summary>
-    public List<string> WhitelistedChannels { get; set; } = [];
-
-    /// <summary>
-    /// Channel IDs to ignore when searching for logs. Leave empty to search in all channels.
-    /// If channels are specified for both this and <see cref="WhitelistedChannels"/>, the whitelist takes priority.
-    /// </summary>
-    public List<string> BlacklistedChannels { get; set; } = [];
+    public List<string> ChannelsToMonitor { get; set; } = [];
 }
 
 /// <summary>
@@ -77,6 +65,12 @@ public class WrenchConfig
     /// This only applies to new guilds; existing guilds will be unaffected.
     /// </summary>
     public string[] GuildWhitelist { get; set; } = [];
+
+    /// <summary>
+    /// List of user IDs that act as global administrators for the bot.
+    /// Global admins can both run commands that modify guild configuratons, as well as global configurations for the bot.
+    /// </summary>
+    public string[] GlobalAdministrators { get; set; } = [];
 
     /// <summary>
     /// Whenver to log the user, server and platform when logs are received.

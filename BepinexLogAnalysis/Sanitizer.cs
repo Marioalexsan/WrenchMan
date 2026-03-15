@@ -49,6 +49,7 @@ public static partial class Sanitizer
 
         var writer = new StreamWriter(memoryStream, leaveOpen: true);
         writer.Write(data);
+        memoryStream.Position = 0;
 
         return memoryStream;
     }

@@ -20,59 +20,105 @@ internal class WrenchManBot : IDisposable
 
     private readonly HttpClient HttpClient = new();
 
-    private readonly WrenchConfig _config;
+    private WrenchConfig? _config;
     private readonly Dictionary<string, GuildSettings> _guildConfigs = [];
-    private readonly LogAnalyzerConfig _logAnalyzerConfig;
 
     private readonly LogAnalyzer _logAnalyzer;
-
+    
+    private readonly Dictionary<string, Func<SocketSlashCommand, Task>> _commandHandlers = [];
+    
     private GuildSettings GetConfigForGuild(string guildId)
     {
-        if (!_guildConfigs.TryGetValue(guildId, out var config))
+        if (_guildConfigs.TryGetValue(guildId, out var config))
+            return config;
+        
+        var path = GuildConfigPath(guildId);
+
+        if (File.Exists(path))
+            return _guildConfigs[guildId] = JsonSerializer.Deserialize<GuildSettings>(File.ReadAllText(path)) ?? throw new NullReferenceException("Guild config returned null!");
+            
+        config = _guildConfigs[guildId] = new GuildSettings();
+        File.WriteAllText(path, JsonSerializer.Serialize(config, new JsonSerializerOptions()
         {
-            _guildConfigs[guildId] = config = new GuildSettings();
-            File.WriteAllText(GuildConfigPath(guildId), JsonSerializer.Serialize(config));
-            Program.Debug(nameof(WrenchManBot), $"Initialized new guild config for guild {guildId}");
-        }
+            WriteIndented = true
+        }));
+        Program.Debug(nameof(WrenchManBot), $"Initialized new guild config for guild {guildId}");
 
         return config;
+    }
+
+    private void UpdateConfigForGuild(string guildId, bool silent = false)
+    {
+        var config = GetConfigForGuild(guildId);
+        File.WriteAllText(GuildConfigPath(guildId), JsonSerializer.Serialize(config, new JsonSerializerOptions()
+        {
+            WriteIndented = true
+        }));
+        
+        if (!silent)
+            Program.Debug(nameof(WrenchManBot), $"Saved changes to guild config for {guildId}!");
+    }
+
+    private WrenchConfig GetGlobalConfig()
+    {
+        if (_config != null)
+            return _config;
+
+        if (File.Exists(GlobalConfigPath))
+            return _config = JsonSerializer.Deserialize<WrenchConfig>(File.ReadAllText(GlobalConfigPath)) ?? throw new NullReferenceException("Config was null");
+        
+        File.WriteAllText(GlobalConfigPath, JsonSerializer.Serialize(_config = new(), new JsonSerializerOptions()
+        {
+            WriteIndented = true
+        }));
+        Program.Debug(nameof(WrenchManBot), $"Initialized global config!");
+
+        return _config;
+    }
+
+    private void UpdateGlobalConfig(bool silent = false)
+    {
+        File.WriteAllText(GlobalConfigPath, JsonSerializer.Serialize(_config, new JsonSerializerOptions()
+        {
+            WriteIndented = true
+        }));
+        
+        if (!silent)
+            Program.Debug(nameof(WrenchManBot), $"Saved changes to global config!");
     }
 
     public WrenchManBot()
     {
         Program.Info(nameof(WrenchManBot), "Started bot!");
-        
+
         if (!Directory.Exists(ConfigPath))
             Directory.CreateDirectory(ConfigPath);
 
         if (!Directory.Exists(GuildConfigsFolderPath))
             Directory.CreateDirectory(GuildConfigsFolderPath);
 
-        if (!File.Exists(GlobalConfigPath))
-        {
-            File.WriteAllText(GlobalConfigPath, JsonSerializer.Serialize(_config = new()));
-        }
-        else
-        {
-            _config = JsonSerializer.Deserialize<WrenchConfig>(File.ReadAllText(GlobalConfigPath)) ?? throw new NullReferenceException("Config was null");
-        }
+        _ = GetGlobalConfig();
+        UpdateGlobalConfig(silent: true);
 
         foreach (var file in Directory.EnumerateFiles(GuildConfigsFolderPath, "*.json"))
         {
             var guildId = Path.GetFileNameWithoutExtension(file);
-            var guildSettings = JsonSerializer.Deserialize<GuildSettings>(File.ReadAllText(file)) ?? throw new NullReferenceException("Guild config was null");
-            _guildConfigs[guildId] = guildSettings;
-            Program.Debug(nameof(WrenchManBot), $"Loaded guild config settings for guild {guildId}");
+            _guildConfigs[guildId] = GetConfigForGuild(guildId);
+            UpdateConfigForGuild(guildId, silent: true);
         }
+        
+        Program.Debug(nameof(WrenchManBot), $"Loaded guild config settings for {_guildConfigs.Count} guilds.");
+        
+        LogAnalyzerConfig logAnalyzerConfig;
 
-        if (!File.Exists(_config.Settings.BepInExLogAnalysisRootConfigPath))
+        if (!File.Exists(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath))
         {
             var matchersPath = Path.Combine(ConfigPath, "scoring_job_matchers");
 
             if (!Directory.Exists(matchersPath))
                 Directory.CreateDirectory(matchersPath);
 
-            File.WriteAllText(_config.Settings.BepInExLogAnalysisRootConfigPath, JsonSerializer.Serialize(_logAnalyzerConfig = new()
+            File.WriteAllText(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath, JsonSerializer.Serialize(logAnalyzerConfig = new()
             {
                 ScoringMatcherPaths =
                 [
@@ -83,12 +129,12 @@ internal class WrenchManBot : IDisposable
         }
         else
         {
-            _logAnalyzerConfig = JsonSerializer.Deserialize<LogAnalyzerConfig>(File.ReadAllText(_config.Settings.BepInExLogAnalysisRootConfigPath)) ?? throw new NullReferenceException("Log analysis config was null");
+            logAnalyzerConfig = JsonSerializer.Deserialize<LogAnalyzerConfig>(File.ReadAllText(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath)) ?? throw new NullReferenceException("Log analysis config was null");
         }
 
         _logAnalyzer = new LogAnalyzer(new LogAnalyzerOptions()
         {
-            Config = _logAnalyzerConfig,
+            Config = logAnalyzerConfig,
             LogMethod = (level, logMessage) =>
             {
                 Action<string, string> logger = level switch
@@ -108,9 +154,9 @@ internal class WrenchManBot : IDisposable
 
         string? token = Environment.GetEnvironmentVariable("WRENCHMAN_AUTH");
 
-        if (token == null && File.Exists(_config.TokenFilePath))
+        if (token == null && File.Exists(GetGlobalConfig().TokenFilePath))
         {
-            token = File.ReadAllText(_config.TokenFilePath);
+            token = File.ReadAllText(GetGlobalConfig().TokenFilePath);
         }
 
         if (token == null)
@@ -163,56 +209,13 @@ internal class WrenchManBot : IDisposable
 
         try
         {
-            switch (cmd.Data.Name)
+            if (!_commandHandlers.TryGetValue(cmd.Data.Name, out var handler))
             {
-                case "analyze-log":
-                    var attachment = (IAttachment)cmd.Data.Options.First().Value;
-
-                    if (attachment.Size >= 1024 * 1024 * 20)
-                    {
-                        await cmd.FollowupAsync("Sorry, I can only parse logs that have a total size of at most 20 MiB!", ephemeral: true);
-                        return;
-                    }
-
-                    var responseTime = Stopwatch.StartNew();
-                    var data = await FetchAsync(attachment.Url);
-
-                    if (data == null)
-                    {
-                        await cmd.FollowupAsync("Failed to get the attachment file! (cc: <@320578056488222723>)", allowedMentions: new AllowedMentions(AllowedMentionTypes.Users));
-                        return;
-                    }
-
-                    Program.Info(nameof(WrenchManBot), $"Analyzing attachment {attachment.Filename}...");
-
-                    var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
-                    var result = await ProcessAttachment(stream);
-
-                    stream.Position = 0;
-
-                    if (result == null)
-                    {
-                        Program.Info(nameof(WrenchManBot), $"File {attachment.Filename} doesn't seem like it's a log.");
-                        await cmd.FollowupAsync("That doesn't look like a valid log file! It should be a Player.log, or LogOutput.log file");
-                    }
-                    else
-                    {
-                        var sanitizeTime = Stopwatch.StartNew();
-                        var sanitizedLog = Sanitizer.Sanitize(stream);
-                        Program.Debug(nameof(WrenchManBot), $"Sanitization took {sanitizeTime.ElapsedMilliseconds:F2}ms");
-
-                        await cmd.FollowupWithFilesAsync([
-                            new FileAttachment(sanitizedLog, "SanitizedLog.txt"),
-                            new FileAttachment(result, "Report.txt")
-                        ], "Here's a summary of your log file!");
-                        Program.Info(nameof(WrenchManBot), $"Sent summary for {attachment.Filename}.");
-                    }
-
-                    Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
-                    break;
-                default:
-                    await cmd.FollowupAsync("Uh, I don't know how to process that command...", ephemeral: true);
-                    break;
+                await cmd.FollowupAsync("Uh, I don't know how to process that command...", ephemeral: true);
+            }
+            else
+            {
+                await handler(cmd);
             }
         }
         catch (Exception)
@@ -224,15 +227,32 @@ internal class WrenchManBot : IDisposable
 
     private async Task DiscordReady()
     {
-        var analyzeLogCommand = new SlashCommandBuilder()
+        List<ApplicationCommandProperties> cmds = [];
+
+        _commandHandlers["analyze-log"] = AnalyzeLogCommand;
+        cmds.Add(new SlashCommandBuilder()
             .WithName("analyze-log")
             .WithDescription("Extracts logs from arguments or a given message, and analyzes them.")
             .AddOption("file", ApplicationCommandOptionType.Attachment, "Attach a log file to analyze.", isRequired: true)
-            .Build();
+            .AddOption("sanitize", ApplicationCommandOptionType.Boolean, "Remove sensitive information from the log (such as Steam IDs)")
+            .Build()
+        );
 
-        await SocketClient!.BulkOverwriteGlobalApplicationCommandsAsync([
-            analyzeLogCommand
-        ]);
+        _commandHandlers["toggle-channel-logs"] = ToggleLogsForChannel;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("toggle-channel-logs")
+            .WithDescription("Toggles on/off whenever the bot automatically analyzes logs sent in this channel.")
+            .Build()
+        );
+
+        _commandHandlers["stats"] = GetBotStats;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("stats")
+            .WithDescription("Gets bot stats.")
+            .Build()
+        );
+
+        await SocketClient!.BulkOverwriteGlobalApplicationCommandsAsync(cmds.ToArray());
     }
 
     public void Dispose()
@@ -265,115 +285,214 @@ internal class WrenchManBot : IDisposable
         return Task.CompletedTask;
     }
 
+    private async Task AnalyzeLogCommand(SocketSlashCommand cmd)
+    {
+        var attachmentOption = cmd.Data.Options.FirstOrDefault(x => x.Name == "file");
+
+        if (attachmentOption == null)
+        {
+            await cmd.FollowupAsync($"You must provide a log to analyze!", ephemeral: true);
+            return;
+        }
+
+        var attachment = (IAttachment)attachmentOption.Value;
+        
+        var sanitizeOption = cmd.Data.Options.FirstOrDefault(x => x.Name == "sanitize");
+
+        bool sanitize = sanitizeOption != null ? (bool)sanitizeOption.Value : true;
+
+        const int maxSizeInMib = 20;
+
+        if (attachment.Size >= 1024 * 1024 * maxSizeInMib)
+        {
+            await cmd.FollowupAsync($"Sorry, I can only parse up to {maxSizeInMib} MiB of logs at once!", ephemeral: true);
+            return;
+        }
+
+        IAttachment[] logsToAnalize = [attachment];
+
+        var responseTime = Stopwatch.StartNew();
+        
+        await AnalyzeReceivedLogs(cmd.Channel, async (replyMessage, attachments) =>
+        {
+            if (attachments.Length == 0)
+                await cmd.FollowupAsync(replyMessage);
+            else
+                await cmd.FollowupWithFilesAsync(attachments, replyMessage);
+        }, logsToAnalize, true, sanitize, CancellationToken.None);
+
+        Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
+    }
+
+    private async Task GetBotStats(SocketSlashCommand cmd)
+    {
+        if (!GetGlobalConfig().GlobalAdministrators.Contains(cmd.User.Id.ToString()))
+        {
+            await cmd.FollowupAsync("You cannot use that command!", ephemeral: true);
+            return;
+        }
+        
+        await cmd.FollowupAsync($"Currently in {SocketClient!.Guilds.Count} guilds", ephemeral: true);
+    }
+
+    private async Task ToggleLogsForChannel(SocketSlashCommand cmd)
+    {
+        if (cmd.Channel is not IGuildChannel channel)
+        {
+            await cmd.FollowupAsync("This command can only be used as part of servers!", ephemeral: true);
+            return;
+        }
+
+        var guildUser = await channel.Guild.GetUserAsync(cmd.User.Id);
+
+        if (!guildUser.GuildPermissions.ManageGuild && !GetGlobalConfig().GlobalAdministrators.Contains(cmd.User.Id.ToString()))
+        {
+            await cmd.FollowupAsync("You need the \"Manage Server\" to toggle channel logging!", ephemeral: true);
+            return;
+        }
+
+        var config = GetConfigForGuild(channel.Guild.Id.ToString());
+        var channelsToMonitor = config.LogAnalyzer.ChannelsToMonitor;
+
+        if (channelsToMonitor.Contains(channel.Id.ToString()))
+        {
+            channelsToMonitor.Remove(channel.Id.ToString());
+            Program.Info(nameof(WrenchManBot), $"Toggled off logging for channel {channel.Name} ({channel.Id}) in {channel.Guild.Name} ({channel.Guild.Id}).");
+            await cmd.FollowupAsync("Toggled off logging for this channel!");
+        }
+        else
+        {
+            channelsToMonitor.Add(channel.Id.ToString());
+            Program.Info(nameof(WrenchManBot), $"Toggled on logging for channel {channel.Name} ({channel.Id}) in {channel.Guild.Name} ({channel.Guild.Id}).");
+            await cmd.FollowupAsync("Toggled on logging for this channel!");
+        }
+        
+        UpdateConfigForGuild(channel.Guild.Id.ToString());
+    }
+
+    private async Task AnalyzeReceivedLogs(ISocketMessageChannel channel, Func<string, FileAttachment[], Task> reply, IAttachment[] attachments, bool resendLog, bool sanitizeLog, CancellationToken ct)
+    {
+        var messageLocationInfo = !GetGlobalConfig().LogUserAndLocationDetails
+            ? ""
+            : channel switch
+            {
+                IGuildChannel fromGuild => $"in server {fromGuild.Guild.Name} ({fromGuild.Guild.Id})",
+                IDMChannel fromChannel => $"in direct messages with {fromChannel.Recipient.Username} ({fromChannel.Recipient.Id})",
+                _ => $"in unknown channel ({channel.GetType()})"
+            };
+
+        Program.Info(nameof(WrenchManBot), $"Processing {attachments.Length} logs ({attachments.Select(x => x.Size).Sum() / 1024} KiB) {messageLocationInfo}...");
+
+        var contents = await Task.WhenAll(attachments.Select(x => FetchAsync(x.Url, ct)));
+        var logAttachments = resendLog ? new FileAttachment?[attachments.Length] : [];
+        var reportAttachments = new FileAttachment?[attachments.Length];
+
+        await Parallel.ForAsync(0, attachments.Length, async (index, cancellationToken) =>
+        {
+            var data = contents[index];
+
+            if (data == null)
+                return;
+
+            Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+
+            if (sanitizeLog)
+                stream = Sanitizer.Sanitize(stream);
+            
+            var result = await ProcessAttachment(stream, cancellationToken);
+
+            if (result != null)
+            {
+                if (resendLog)
+                {
+                    stream.Position = 0;
+                    logAttachments[index] = new FileAttachment(stream, $"Log-{index}.txt");
+                }
+                
+                reportAttachments[index] = new FileAttachment(result, $"Report-{index}.txt");
+            }
+        });
+
+        var actualLogs = logAttachments.Where(x => x != null).Select(x => x!.Value).ToArray();
+        var actualReports = reportAttachments.Where(x => x != null).Select(x => x!.Value).ToArray();
+        var replyAttachments = actualLogs.Concat(actualReports).ToArray();
+
+        if (actualReports.Length == 0)
+        {
+            await reply("I couldn't retrieve or process any of the log files you sent!", []);
+        }
+        else if (actualReports.Length != attachments.Length)
+        {
+            await reply($"I couldn't retrieve or process {attachments.Length - actualReports.Length} log files from the ones you sent! Here's what I managed to process:", replyAttachments);
+        }
+        else
+        {
+            await reply($"Here's a summary of your log files!", replyAttachments);
+        }
+    }
+
     private async Task OnMessageReceived(SocketMessage message)
     {
-        if (message.Author.IsBot || message.Author.IsWebhook || message.Source == MessageSource.System)
+        if (!ShouldProcessReceivedChannelMessage(message))
             return;
+
+        var logsToAnalize = message.Attachments
+            .Where(x => x.Filename.EndsWith(".log") || x.Filename.EndsWith(".txt"))
+            .ToArray<IAttachment>();
+        
+        if (logsToAnalize.Length == 0)
+            return;
+
+        if (logsToAnalize.Length > 5)
+        {
+            await message.Channel.SendMessageAsync("Sorry, I can only process at most 5 logs per message!");
+            return;
+        }
+
+        var totalSize = logsToAnalize.Sum(x => x.Size);
+        
+        const int maxSizeInMib = 20;
+        
+        if (totalSize >= 1024 * 1024 * maxSizeInMib)
+        {
+            await message.Channel.SendMessageAsync($"Sorry, I can only parse logs that have a total size of at most {maxSizeInMib} MiB!");
+            return;
+        }
+
+        var responseTime = Stopwatch.StartNew();
+
+        await AnalyzeReceivedLogs(message.Channel, async (replyMessage, attachments) =>
+        {
+            if (attachments.Length == 0)
+                await message.Channel.SendMessageAsync(replyMessage);
+            else
+                await message.Channel.SendFilesAsync(attachments, replyMessage);
+        }, logsToAnalize, false, false, CancellationToken.None);
+
+        Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
+    }
+
+    private bool ShouldProcessReceivedChannelMessage(SocketMessage message)
+    {
+        if (message.Author.IsBot || message.Author.IsWebhook || message.Source == MessageSource.System)
+            return false;
 
         var channelType = message.Channel.GetChannelType();
 
-        if (channelType == ChannelType.DM && !_config.Settings.LogAnalyzer.LookInDirectMessages)
-            return;
+        if (channelType == ChannelType.DM && !GetGlobalConfig().Settings.LogAnalyzer.LookInDirectMessages)
+            return false;
 
         if (message.Channel is SocketGuildChannel guildChannel)
         {
             var config = GetConfigForGuild(guildChannel.Guild.Id.ToString()).LogAnalyzer;
 
-            if (config.WhitelistedChannels.Count > 0)
-            {
-                if (!config.WhitelistedChannels.Contains(guildChannel.Id.ToString()))
-                    return;
-            }
-            else if (config.BlacklistedChannels.Count > 0)
-            {
-                if (config.BlacklistedChannels.Contains(guildChannel.Id.ToString()))
-                    return;
-            }
-            else
-            {
-                if (!config.LookInThreads && message.Channel is SocketThreadChannel)
-                    return;
-            }
+            if (!config.ChannelsToMonitor.Contains(guildChannel.Id.ToString()))
+                return false;
         }
 
-        List<Task<string?>> tasks = [];
-        List<string> fileUrls = [];
-        List<string> fileNames = [];
-
-        int totalSize = 0;
-
-        foreach (var item in message.Attachments)
-        {
-            if (!(item.Filename.EndsWith(".log") || item.Filename.EndsWith(".txt")))
-                continue;
-
-            totalSize += item.Size;
-
-            fileUrls.Add(item.Url);
-            fileNames.Add(item.Filename);
-        }
-
-        if (fileUrls.Count == 0)
-            return;
-
-        if (totalSize >= 1024 * 1024 * 20)
-        {
-            await message.Channel.SendMessageAsync("Sorry, I can only parse logs that have a total size of at most 20 MiB!");
-            return;
-        }
-        
-        var responseTime = Stopwatch.StartNew();
-
-        foreach (var url in fileUrls)
-            tasks.Add(FetchAsync(url));
-
-        var attachments = await Task.WhenAll(tasks);
-
-        if (_config.LogUserAndLocationDetails)
-        {
-            var messageAuthorInfo = $"{message.Author.Username} ({message.Author.Id})";
-
-            var messageLocationInfo = message.Channel switch
-            {
-                IGuildChannel fromGuild => $"{message.Channel.Name} ({message.Channel.Id}), {fromGuild.Guild.Name} ({fromGuild.Guild.Id})",
-                IDMChannel _ => $"direct messages",
-                _ => $"unknown DM / server ({message.Channel.GetType()})"
-            };
-
-            Program.Info(nameof(WrenchManBot), $"Processing {attachments.Length} logs ({totalSize / 1024} KiB) from {messageAuthorInfo} in {messageLocationInfo}...");
-        }
-        else
-        {
-            Program.Info(nameof(WrenchManBot), $"Processing {attachments.Length} logs ({totalSize / 1024} KiB) from a request...");
-        }
-
-        for (int i = 0; i < attachments.Length; i++)
-        {
-            var data = attachments[i];
-
-            if (data == null)
-                continue;
-
-            Program.Info(nameof(WrenchManBot), $"Analyzing attachment {fileNames[i]}...");
-
-            var stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
-
-            var result = await ProcessAttachment(stream);
-
-            if (result == null)
-            {
-                Program.Info(nameof(WrenchManBot), $"File {fileNames[i]} doesn't seem like it's a log, skipping it.");
-            }
-            else
-            {
-                await message.Channel.SendFileAsync(result, "Report.txt", "Here's a summary of your log file!");
-                Program.Info(nameof(WrenchManBot), $"Sent summary for {fileNames[i]}.");
-            }
-        }
-        
-        Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
+        return true;
     }
-
+    
     private Task SocketLog(LogMessage message)
     {
         if (message.Exception is GatewayReconnectException or WebSocketException)
@@ -409,8 +528,8 @@ internal class WrenchManBot : IDisposable
             await guild.LeaveAsync();
             return;
         }
-        
-        if (_config.GuildWhitelist.Length > 0 && !_config.GuildWhitelist.Contains(guild.Id.ToString()))
+
+        if (GetGlobalConfig().GuildWhitelist.Length > 0 && !GetGlobalConfig().GuildWhitelist.Contains(guild.Id.ToString()))
         {
             Program.Warn(nameof(WrenchManBot), $"Guild {guild.Id} is not in the whitelist, will attempt leaving.");
             await guild.LeaveAsync();
@@ -437,7 +556,7 @@ internal class WrenchManBot : IDisposable
                 !perms.SendMessagesInThreads ||
                 !perms.ReadMessageHistory ||
                 !perms.ViewChannel;
-            
+
             if (permissionsMissing)
                 Program.Warn(nameof(WrenchManBot), $"Guild {guild.Id} might have misconfigured permissions for the bot!");
         }
@@ -446,30 +565,30 @@ internal class WrenchManBot : IDisposable
         await guild.BulkOverwriteApplicationCommandAsync([]);
     }
 
-    protected async Task<string?> FetchAsync(string url)
+    protected async Task<string?> FetchAsync(string url, CancellationToken ct)
     {
         try
         {
-            HttpResponseMessage response = await HttpClient.GetAsync(url);
+            HttpResponseMessage response = await HttpClient.GetAsync(url, ct);
 
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsStringAsync();
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException e)
         {
-            Program.Error(nameof(WrenchManBot), $"Failed to fetch resource from {url}");
+            Program.Error(nameof(WrenchManBot), $"Failed to fetch resource from {url}: {e.Message}");
             return null;
         }
     }
 
-    private async Task<Stream?> ProcessAttachment(Stream attachment)
+    private async Task<Stream?> ProcessAttachment(Stream attachment, CancellationToken ct)
     {
         var minimumProcessingTime = Task.Delay(750);
 
         MemoryStream output = new();
 
-        bool success = await _logAnalyzer.ProcessLogAsync(attachment, output, CancellationToken.None);
+        bool success = await _logAnalyzer.ProcessLogAsync(attachment, output, ct);
         await minimumProcessingTime;
 
         if (!success)
