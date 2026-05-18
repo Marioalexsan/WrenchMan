@@ -10,15 +10,30 @@ public partial class HomebreweryJob : IJob
     [GeneratedRegex("""(.*?) (\S*) (?:name )?invalid: ([\S\ ]*)""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ThingInvalid();
 
+    [GeneratedRegex("""(.*?) (\S*) not found: ([\S\ ]*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ThingInvalid2();
+
+    [GeneratedRegex("""(.*?) _enchantCostItem didn't find a match: (.*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex EnchantCostNoMatches();
+    
+    [GeneratedRegex("""(.*?) _enchantCostItem found multiple matches: (.*?)\. Consider making it more specific\. Using the first match\.""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex EnchantCostMultipleMatches();
+
     [GeneratedRegex("""(.*) - Glb file returned more than one mesh, we only want one!""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex MultipleMeshes();
 
     [GeneratedRegex("""Processing: (\S*)""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex LoadingContentPack();
 
+    [GeneratedRegex("""\[NotTruePNG\] Image is not actually a PNG, this might cause unexpected issues! File: (.*)""", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex NotAPNG();
+
     // Type => Thing Name => Asset Name
     private readonly Dictionary<string, Dictionary<string, string>> _brokenStuff = [];
     private readonly List<string> _multipleMeshes = [];
+    private readonly Dictionary<string, string> _enchantNoMatches = [];
+    private readonly Dictionary<string, string> _enchantMultipleMatches = [];
+    private readonly List<string> _pngIssues = [];
     private bool _encounteredLogLines;
     private bool _encounteredIssues;
     private bool _foundContentPacks;
@@ -36,6 +51,9 @@ public partial class HomebreweryJob : IJob
         _encounteredLogLines = true;
 
         Match invalidMatch = ThingInvalid().Match(line.Contents);
+
+        if (!invalidMatch.Success)
+            invalidMatch = ThingInvalid2().Match(line.Contents);
 
         if (invalidMatch.Success)
         {
@@ -86,6 +104,33 @@ public partial class HomebreweryJob : IJob
             return false;
         }
 
+        Match enchantNoMatches = EnchantCostNoMatches().Match(line.Contents);
+
+        if (enchantNoMatches.Success)
+        {
+            _enchantNoMatches[enchantNoMatches.Groups[1].Value] = enchantNoMatches.Groups[2].Value;
+            _encounteredIssues = true;
+            return false;
+        }
+
+        Match enchantMultipleMatches = EnchantCostMultipleMatches().Match(line.Contents);
+
+        if (enchantMultipleMatches.Success)
+        {
+            _enchantMultipleMatches[enchantMultipleMatches.Groups[1].Value] = enchantMultipleMatches.Groups[2].Value;
+            _encounteredIssues = true;
+            return false;
+        }
+
+        Match pngIssues = NotAPNG().Match(line.Contents);
+
+        if (pngIssues.Success)
+        {
+            _pngIssues.Add(pngIssues.Groups[1].Value);
+            _encounteredIssues = true;
+            return false;
+        }
+
         return true;
     }
 
@@ -132,15 +177,61 @@ public partial class HomebreweryJob : IJob
                 stream.Write("  ");
                 stream.WriteLine(objName);
             }
+
+            stream.WriteLine();
         }
 
-        stream.WriteLine();
+        if (_enchantNoMatches.Count > 0)
+        {
+            stream.WriteLine("No matches for enchant item cost:");
+
+            foreach (var (item, cost) in _enchantNoMatches.OrderBy(x => x.Key))
+            {
+                stream.Write("  ");
+                stream.Write(item);
+                stream.Write(" - ");
+                stream.WriteLine(cost);
+            }
+
+            stream.WriteLine();
+        }
+
+        if (_enchantMultipleMatches.Count > 0)
+        {
+            stream.WriteLine("Multiple matches for enchant item cost:");
+
+            foreach (var (item, cost) in _enchantMultipleMatches.OrderBy(x => x.Key))
+            {
+                stream.Write("  ");
+                stream.Write(item);
+                stream.Write(" - ");
+                stream.WriteLine(cost);
+            }
+
+            stream.WriteLine();
+        }
+
+        if (_pngIssues.Count > 0)
+        {
+            stream.WriteLine("PNG files with issues (NotAPNG):");
+
+            foreach (var path in _pngIssues.Order())
+            {
+                stream.Write("  ");
+                stream.WriteLine(path);
+            }
+
+            stream.WriteLine();
+        }
     }
 
     public void Reset(LogContext context)
     {
         _brokenStuff.Clear();
         _multipleMeshes.Clear();
+        _enchantNoMatches.Clear();
+        _enchantMultipleMatches.Clear();
+        _pngIssues.Clear();
         _encounteredLogLines = false;
         _encounteredIssues = false;
         _foundContentPacks = false;
