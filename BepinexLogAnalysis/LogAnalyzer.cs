@@ -86,7 +86,7 @@ public partial class LogAnalyzer
     }
 
     // TODO: No idea if this regex is evil or not
-    [GeneratedRegex("""\[(debug|info|warning|message|fatal|error)\s*:\s*([^\]]+)\]\s?(.*?)(?=(?:\n\[|\z))""", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
+    [GeneratedRegex("""\[(debug|info|warning|message|fatal|error)\s*:\s*([^\]]+)\]\s?(.*?)(?=(?:\r?\n\[|\z))""", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]
     private static partial Regex LogLineRegex();
 
     public async Task<bool> ProcessLogAsync(Stream input, Stream output, CancellationToken ct)

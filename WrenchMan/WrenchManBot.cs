@@ -5,6 +5,7 @@ using Discord;
 using Discord.WebSocket;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace WrenchMan;
 
@@ -25,7 +26,8 @@ internal class WrenchManBot : IDisposable
 
     private readonly LogAnalyzer _logAnalyzer;
     
-    private readonly Dictionary<string, Func<SocketSlashCommand, Task>> _commandHandlers = [];
+    private readonly Dictionary<string, Func<SocketSlashCommand, Task>> _slashCommandHandlers = [];
+    private readonly Dictionary<string, Func<SocketMessageCommand, Task>> _messageCommandHandlers = [];
     
     private GuildSettings GetConfigForGuild(string guildId)
     {
@@ -97,7 +99,7 @@ internal class WrenchManBot : IDisposable
         if (!Directory.Exists(GuildConfigsFolderPath))
             Directory.CreateDirectory(GuildConfigsFolderPath);
 
-        _ = GetGlobalConfig();
+        var globalConfig = GetGlobalConfig();
         UpdateGlobalConfig(silent: true);
 
         foreach (var file in Directory.EnumerateFiles(GuildConfigsFolderPath, "*.json"))
@@ -111,14 +113,14 @@ internal class WrenchManBot : IDisposable
         
         LogAnalyzerConfig logAnalyzerConfig;
 
-        if (!File.Exists(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath))
+        if (!File.Exists(globalConfig.Settings.BepInExLogAnalysisRootConfigPath))
         {
             var matchersPath = Path.Combine(ConfigPath, "scoring_job_matchers");
 
             if (!Directory.Exists(matchersPath))
                 Directory.CreateDirectory(matchersPath);
 
-            File.WriteAllText(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath, JsonSerializer.Serialize(logAnalyzerConfig = new()
+            File.WriteAllText(globalConfig.Settings.BepInExLogAnalysisRootConfigPath, JsonSerializer.Serialize(logAnalyzerConfig = new()
             {
                 ScoringMatcherPaths =
                 [
@@ -129,7 +131,7 @@ internal class WrenchManBot : IDisposable
         }
         else
         {
-            logAnalyzerConfig = JsonSerializer.Deserialize<LogAnalyzerConfig>(File.ReadAllText(GetGlobalConfig().Settings.BepInExLogAnalysisRootConfigPath)) ?? throw new NullReferenceException("Log analysis config was null");
+            logAnalyzerConfig = JsonSerializer.Deserialize<LogAnalyzerConfig>(File.ReadAllText(globalConfig.Settings.BepInExLogAnalysisRootConfigPath)) ?? throw new NullReferenceException("Log analysis config was null");
         }
 
         _logAnalyzer = new LogAnalyzer(new LogAnalyzerOptions()
@@ -154,9 +156,9 @@ internal class WrenchManBot : IDisposable
 
         string? token = Environment.GetEnvironmentVariable("WRENCHMAN_AUTH");
 
-        if (token == null && File.Exists(GetGlobalConfig().TokenFilePath))
+        if (token == null && File.Exists(globalConfig.TokenFilePath))
         {
-            token = File.ReadAllText(GetGlobalConfig().TokenFilePath);
+            token = File.ReadAllText(globalConfig.TokenFilePath);
         }
 
         if (token == null)
@@ -165,12 +167,17 @@ internal class WrenchManBot : IDisposable
             return;
         }
 
+        var gatewayIntents = GatewayIntents.AllUnprivileged & ~GatewayIntents.GuildInvites & ~GatewayIntents.GuildScheduledEvents;
+
+        if (globalConfig.UsePrivilegedIntents)
+            gatewayIntents = gatewayIntents | GatewayIntents.MessageContent | GatewayIntents.GuildMembers;
+
         SocketClient = new DiscordSocketClient(new DiscordSocketConfig
         {
             MessageCacheSize = 100,
             LogLevel = LogSeverity.Warning,
-            AlwaysDownloadUsers = true,
-            GatewayIntents = (GatewayIntents.AllUnprivileged | GatewayIntents.MessageContent | GatewayIntents.GuildMembers) & ~GatewayIntents.GuildInvites & ~GatewayIntents.GuildScheduledEvents,
+            AlwaysDownloadUsers = false,
+            GatewayIntents = gatewayIntents,
         });
 
         SocketClient.GuildAvailable += GuildAvailable;
@@ -179,6 +186,7 @@ internal class WrenchManBot : IDisposable
 
         SocketClient.MessageReceived += OnMessageReceived;
         SocketClient.SlashCommandExecuted += SlashCommandExecuted;
+        SocketClient.MessageCommandExecuted += MessageCommandExecuted;
         SocketClient.Connected += OnConnected;
         SocketClient.Disconnected += OnDisconnected;
 
@@ -204,12 +212,35 @@ internal class WrenchManBot : IDisposable
 
     private async Task SlashCommandExecuted(SocketSlashCommand cmd)
     {
-        Program.Info(nameof(WrenchManBot), $"Processing command {cmd.Data.Name} from {cmd.User.Username} ({cmd.User.Id})...");
-        await cmd.DeferAsync();
+        Program.Info(nameof(WrenchManBot), $"Processing slash command {cmd.Data.Name} from {cmd.User.Username} ({cmd.User.Id})...");
+        await cmd.DeferAsync(ephemeral: true);
 
         try
         {
-            if (!_commandHandlers.TryGetValue(cmd.Data.Name, out var handler))
+            if (!_slashCommandHandlers.TryGetValue(cmd.Data.Name, out var handler))
+            {
+                await cmd.FollowupAsync("Uh, I don't know how to process that command...", ephemeral: true);
+            }
+            else
+            {
+                await handler(cmd);
+            }
+        }
+        catch (Exception)
+        {
+            await cmd.FollowupAsync("I encountered an issue while processing this command! Please message the developer about this.", ephemeral: true);
+            throw;
+        }
+    }
+    
+    private async Task MessageCommandExecuted(SocketMessageCommand cmd)
+    {
+        Program.Info(nameof(WrenchManBot), $"Processing message command {cmd.Data.Name} from {cmd.User.Username} ({cmd.User.Id})...");
+        await cmd.DeferAsync(ephemeral: true);
+
+        try
+        {
+            if (!_messageCommandHandlers.TryGetValue(cmd.Data.Name, out var handler))
             {
                 await cmd.FollowupAsync("Uh, I don't know how to process that command...", ephemeral: true);
             }
@@ -229,7 +260,7 @@ internal class WrenchManBot : IDisposable
     {
         List<ApplicationCommandProperties> cmds = [];
 
-        _commandHandlers["analyze-log"] = AnalyzeLogCommand;
+        _slashCommandHandlers["analyze-log"] = AnalyzeLogCommand;
         cmds.Add(new SlashCommandBuilder()
             .WithName("analyze-log")
             .WithDescription("Extracts logs from arguments or a given message, and analyzes them.")
@@ -238,19 +269,58 @@ internal class WrenchManBot : IDisposable
             .Build()
         );
 
-        _commandHandlers["toggle-channel-logs"] = ToggleLogsForChannel;
+        _slashCommandHandlers["toggle-channel-logs"] = ToggleLogsForChannel;
         cmds.Add(new SlashCommandBuilder()
             .WithName("toggle-channel-logs")
             .WithDescription("Toggles on/off whenever the bot automatically analyzes logs sent in this channel.")
             .Build()
         );
 
-        _commandHandlers["stats"] = GetBotStats;
+        _slashCommandHandlers["stats"] = GetBotStats;
         cmds.Add(new SlashCommandBuilder()
             .WithName("stats")
             .WithDescription("Gets bot stats.")
             .Build()
         );
+
+        _messageCommandHandlers["Analyze logs"] = AnalyzeLogOnMessageCommand;
+        cmds.Add(new MessageCommandBuilder()
+            .WithName("Analyze logs")
+            .Build());
+
+        _slashCommandHandlers["store-ref"] = StoreBotMessage;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("store-ref")
+            .WithDescription("Stores a message in the bot. Requires bot admin. Overwrites existing message if any.")
+            .AddOption("id", ApplicationCommandOptionType.String, "The identifier to use for the message.", isRequired: true, minLength: 4, maxLength: 32)
+            .AddOption("description", ApplicationCommandOptionType.String, "The identifier to use for the message.", isRequired: true, minLength: 4, maxLength: 64)
+            .AddOption("text", ApplicationCommandOptionType.String, "Message text to send.", isRequired: true)
+            .AddOption("file1", ApplicationCommandOptionType.Attachment, "First file attachment.")
+            .AddOption("file2", ApplicationCommandOptionType.Attachment, "Second file attachment.")
+            .AddOption("file3", ApplicationCommandOptionType.Attachment, "Third file attachment.")
+            .AddOption("file4", ApplicationCommandOptionType.Attachment, "Fourth file attachment.")
+            .Build());
+        
+        _slashCommandHandlers["remove-ref"] = RemoveBotMessage;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("remove-ref")
+            .WithDescription("Removes a message from the bot. Requires bot admin.")
+            .AddOption("id", ApplicationCommandOptionType.String, "The identifier of the message.", isRequired: true)
+            .Build());
+        
+        _slashCommandHandlers["list-ref"] = GetAvailableBotMessages;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("list-ref")
+            .WithDescription("Get available messages you can use. Paginated with 10 items per page.")
+            .AddOption("page", ApplicationCommandOptionType.Integer, "Page number to show.", minValue: 1)
+            .Build());
+        
+        _slashCommandHandlers["ref"] = GetBotMessage;
+        cmds.Add(new SlashCommandBuilder()
+            .WithName("ref")
+            .WithDescription("Get a message from the bot.")
+            .AddOption("id", ApplicationCommandOptionType.String, "The identifier of the message.", isRequired: true)
+            .Build());
 
         await SocketClient!.BulkOverwriteGlobalApplicationCommandsAsync(cmds.ToArray());
     }
@@ -270,7 +340,16 @@ internal class WrenchManBot : IDisposable
         "Yellow = crash, red = malware",
         "I forgor",
         "This wrench is actually just a prop",
-        "ExceptionException: undefined"
+        "ExceptionException: undefined",
+        "Swisches my big fluffy $$$$-ing tail",
+        "DID YOU SEE THAT? HUH???",
+        "True!",
+        "False...",
+        "You owe me $5",
+        "& Homebrewery",
+        "Who's Joe...?",
+        "Also available on Blunderstore",
+        "Powered by furry queers"
     ];
 
     private async Task OnConnected()
@@ -283,6 +362,131 @@ internal class WrenchManBot : IDisposable
     {
         Program.Debug(nameof(WrenchManBot), $"Got disconnected from Discord! {error.Message}");
         return Task.CompletedTask;
+    }
+    
+    // TODO: The entire message code surface is rushed, should be refactored
+    private async Task StoreBotMessage(SocketSlashCommand cmd)
+    {
+        if (!GetGlobalConfig().GlobalAdministrators.Contains(cmd.User.Id.ToString()))
+        {
+            await cmd.FollowupAsync("You cannot use that command!", ephemeral: true);
+            return;
+        }
+        
+        var id = cmd.Data.Options.FirstOrDefault(x => x.Name == "id")?.Value as string;
+        var description = cmd.Data.Options.FirstOrDefault(x => x.Name == "description")?.Value as string;
+        var text = cmd.Data.Options.FirstOrDefault(x => x.Name == "text")?.Value as string;
+        var file1 = cmd.Data.Options.FirstOrDefault(x => x.Name == "file1")?.Value as IAttachment;
+        var file2 = cmd.Data.Options.FirstOrDefault(x => x.Name == "file2")?.Value as IAttachment;
+        var file3 = cmd.Data.Options.FirstOrDefault(x => x.Name == "file3")?.Value as IAttachment;
+        var file4 = cmd.Data.Options.FirstOrDefault(x => x.Name == "file4")?.Value as IAttachment;
+        var attachments = new[] { file1, file2, file3, file4 }.Where(x => x != null).ToArray();
+
+        if (id == null || !Regex.IsMatch(id, "^[a-z_-]{4,32}$") || text == null || description == null)
+        {
+            await cmd.FollowupAsync("Invalid arguments!", ephemeral: true);
+            return;
+        }
+
+        var files = await Task.WhenAll(attachments.Select(x => x == null ? Task.FromResult<byte[]?>(null) : FetchAsync(x.Url, CancellationToken.None)));
+
+        if (files.Any(x => x == null))
+        {
+            await cmd.FollowupAsync("Failed to fetch one or more attachments!", ephemeral: true);
+            return;
+        }
+        
+        await StoredMessages.SetMessageAsync(id, new StoredMessages.Message()
+        {
+            Attachments = files.Zip(attachments).Select(x => new StoredMessages.Attachment()
+            {
+                Filename = x.Second!.Filename,
+                ContentType = x.Second!.ContentType,
+                ContentBase64 = Convert.ToBase64String(x.First!)
+            }).ToList(),
+            Description = description,
+            Text = text
+        });
+        
+        await cmd.FollowupAsync("Message stored!", ephemeral: true);
+    }
+    
+    private async Task RemoveBotMessage(SocketSlashCommand cmd)
+    {
+        if (!GetGlobalConfig().GlobalAdministrators.Contains(cmd.User.Id.ToString()))
+        {
+            await cmd.FollowupAsync("You cannot use that command!", ephemeral: true);
+            return;
+        }
+        
+        var id = cmd.Data.Options.FirstOrDefault(x => x.Name == "id")?.Value as string;
+        
+        if (id == null || !Regex.IsMatch(id, "^[a-z_-]{4,32}$"))
+        {
+            await cmd.FollowupAsync("Invalid arguments!", ephemeral: true);
+            return;
+        }
+
+        var msg = await StoredMessages.GetMessageAsync(id);
+        
+        if (msg == null)
+        {
+            await cmd.FollowupAsync("No such message found!", ephemeral: true);
+            return;
+        }
+
+        await StoredMessages.DeleteMessageAsync(id);
+        await cmd.FollowupAsync("Message deleted!", ephemeral: true);
+    }
+    
+    private async Task GetBotMessage(SocketSlashCommand cmd)
+    {
+        var id = cmd.Data.Options.FirstOrDefault(x => x.Name == "id")?.Value as string;
+        
+        if (id == null || !Regex.IsMatch(id, "^[a-z_-]{4,32}$"))
+        {
+            await cmd.FollowupAsync("Invalid arguments!", ephemeral: true);
+            return;
+        }
+
+        var msg = await StoredMessages.GetMessageAsync(id);
+        
+        if (msg == null)
+        {
+            await cmd.FollowupAsync("No such message found!", ephemeral: true);
+            return;
+        }
+
+        if (msg.Attachments.Count == 0)
+            await cmd.FollowupAsync(msg.Text);
+        else
+            await cmd.FollowupWithFilesAsync(msg.Attachments.Select(x =>
+            {
+                var memoryStream = new MemoryStream(Convert.FromBase64String(x.ContentBase64));
+                return new FileAttachment(memoryStream, x.Filename);
+            }), msg.Text);
+    }
+    
+    private async Task GetAvailableBotMessages(SocketSlashCommand cmd)
+    {
+        var page = (cmd.Data.Options.FirstOrDefault(x => x.Name == "page")?.Value as int?) ?? 1;
+        var msgs = StoredMessages.GetAvailableMessages();
+
+        var chunks = msgs.Order().Chunk(10).ToList();
+
+        if (page < 1 || page > chunks.Count)
+        {
+            await cmd.FollowupAsync($"Page number not found! Specify a page number between 1 and {chunks.Count}.", ephemeral: true);
+            return;
+        }
+
+        var retrievedMessages = await Task.WhenAll(chunks[page - 1].Select(x => StoredMessages.GetMessageAsync(x)));
+
+        await cmd.FollowupAsync(
+            $"Command list (page {page} of {chunks.Count}):\n" + 
+            string.Join('\n', chunks[page - 1].Zip(retrievedMessages).Select(x => $"- {x.First} => {x.Second?.Description ?? "<No description available>"}")),
+            ephemeral: true
+        );
     }
 
     private async Task AnalyzeLogCommand(SocketSlashCommand cmd)
@@ -324,6 +528,37 @@ internal class WrenchManBot : IDisposable
         Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
     }
 
+    private async Task AnalyzeLogOnMessageCommand(SocketMessageCommand cmd)
+    {
+        // These are not sanitized, since it's implied the logs are already posted in a channel if you use context
+        // menu commands on them
+        if (cmd.Data.Message.Attachments.Count == 0)
+        {
+            await cmd.FollowupAsync($"There are no log attachments to analyze in this message!", ephemeral: true);
+            return;
+        }
+        
+        const int maxSizeInMib = 20;
+
+        if (cmd.Data.Message.Attachments.Select(x => x.Size).Sum() >= 1024 * 1024 * maxSizeInMib)
+        {
+            await cmd.FollowupAsync($"Sorry, I can only parse up to {maxSizeInMib} MiB of logs at once!", ephemeral: true);
+            return;
+        }
+
+        var responseTime = Stopwatch.StartNew();
+        
+        await AnalyzeReceivedLogs(cmd.Channel, async (replyMessage, attachments) =>
+        {
+            if (attachments.Length == 0)
+                await cmd.FollowupAsync(replyMessage);
+            else
+                await cmd.FollowupWithFilesAsync(attachments, replyMessage);
+        }, [.. cmd.Data.Message.Attachments], false, false, CancellationToken.None);
+
+        Program.Debug(nameof(WrenchManBot), $"Response in total took {responseTime.ElapsedMilliseconds:F2}ms");
+    }
+
     private async Task GetBotStats(SocketSlashCommand cmd)
     {
         if (!GetGlobalConfig().GlobalAdministrators.Contains(cmd.User.Id.ToString()))
@@ -358,13 +593,13 @@ internal class WrenchManBot : IDisposable
         {
             channelsToMonitor.Remove(channel.Id.ToString());
             Program.Info(nameof(WrenchManBot), $"Toggled off logging for channel {channel.Name} ({channel.Id}) in {channel.Guild.Name} ({channel.Guild.Id}).");
-            await cmd.FollowupAsync("Toggled off logging for this channel!");
+            await cmd.FollowupAsync("Toggled off logging for this channel!", ephemeral: true);
         }
         else
         {
             channelsToMonitor.Add(channel.Id.ToString());
             Program.Info(nameof(WrenchManBot), $"Toggled on logging for channel {channel.Name} ({channel.Id}) in {channel.Guild.Name} ({channel.Guild.Id}).");
-            await cmd.FollowupAsync("Toggled on logging for this channel!");
+            await cmd.FollowupAsync("Toggled on logging for this channel!", ephemeral: true);
         }
         
         UpdateConfigForGuild(channel.Guild.Id.ToString());
@@ -394,7 +629,7 @@ internal class WrenchManBot : IDisposable
             if (data == null)
                 return;
 
-            Stream stream = new MemoryStream(Encoding.UTF8.GetBytes(data));
+            Stream stream = new MemoryStream(data);
 
             if (sanitizeLog)
                 stream = Sanitizer.Sanitize(stream);
@@ -565,15 +800,17 @@ internal class WrenchManBot : IDisposable
         await guild.BulkOverwriteApplicationCommandAsync([]);
     }
 
-    protected async Task<string?> FetchAsync(string url, CancellationToken ct)
+    protected async Task<byte[]?> FetchAsync(string url, CancellationToken ct)
     {
         try
         {
+            var responseTime = Stopwatch.StartNew();
             HttpResponseMessage response = await HttpClient.GetAsync(url, ct);
+            Program.Debug(nameof(WrenchManBot), $"Attachment {url} returned {response.StatusCode} in {responseTime.ElapsedMilliseconds:F2}ms");
 
             response.EnsureSuccessStatusCode();
 
-            return await response.Content.ReadAsStringAsync();
+            return await response.Content.ReadAsByteArrayAsync();
         }
         catch (HttpRequestException e)
         {

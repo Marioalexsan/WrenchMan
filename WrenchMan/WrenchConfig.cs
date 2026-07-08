@@ -60,6 +60,12 @@ public class WrenchConfig
     public string TokenFilePath { get; set; } = ".wrenchman_token";
 
     /// <summary>
+    /// Whenever to use privileged intents and features that require them.
+    /// For example, reading logs directly from messages in servers requires the message content intent.
+    /// </summary>
+    public bool UsePrivilegedIntents { get; set; } = false;
+
+    /// <summary>
     /// List of guild IDs that are allowed to invite the bot.
     /// If not empty, the bot will try to leave guilds which invite it and are not whitelisted.
     /// This only applies to new guilds; existing guilds will be unaffected.
