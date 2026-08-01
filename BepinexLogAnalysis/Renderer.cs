@@ -101,7 +101,30 @@ public static class Renderer
             RenderList(writer, report.ProcessingErrors);
         }
     }
+    
+    // Experimenting a bit
+    public static void PawsyRender(LogReport report, Stream stream)
+    {
+        using var writer = new StreamWriter(stream, leaveOpen: true);
 
+        foreach (var (line, score) in report.ScoredMessages.Take(10))
+        {
+            writer.Write($$"""
+                           --- ISSUE ---
+                           Line Number #{{line.Line}}
+                           Source: {{line.Source}}
+                           Severity: {{line.LogLevel}} ({{score}})
+
+                           Contents:
+
+                           """);
+
+            writer.Write(line.Contents.AsSpan(0, Math.Min(line.Contents.Length, 1000)));
+            writer.WriteLine();
+            writer.WriteLine();
+        }
+    }
+    
     private static void RenderGroup2(StreamWriter writer, Dictionary<string, string> group2)
     {
         foreach (var (key, value) in group2)
