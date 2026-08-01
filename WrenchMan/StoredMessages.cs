@@ -1,5 +1,7 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace WrenchMan;
 
@@ -20,6 +22,8 @@ public static class StoredMessages
     }
     
     private static string MessagesPath => Path.Combine(WrenchManBot.ConfigPath, "stored_messages");
+
+    public static bool IsValidId([NotNullWhen(true)] string? id) => id != null && Regex.IsMatch(id, "^[a-z0-9_\\-]{4,32}$");
 
     public static IEnumerable<string> GetAvailableMessages()
     {

@@ -5,5 +5,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-
+  
+  <ItemGroup>
+    <EmbeddedResource Include="LogRules/*.json" LogicalName="bundled_rules/%(Filename)" />
+    <EmbeddedResource Include="LogRules/ATLYSS/*.json" LogicalName="bundled_rules/ATLYSS/%(Filename)" />
+  </ItemGroup>
 </Project>

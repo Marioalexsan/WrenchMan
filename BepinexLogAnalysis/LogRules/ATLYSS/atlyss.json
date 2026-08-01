@@ -1,0 +1,34 @@
+﻿{
+  "name": "bundled_rules/ATLYSS/atlyss",
+  "globalGameFilter": ["ATLYSS"],
+  "rules": [
+    {
+      "description": "Hides unactionable patching errors from Clearwater's ToolbarTweaks",
+      "contentPattern": "ATLYSS_UiTweaks\\.Harmony_Patches\\.DisplayXPToNextLevelPatch\\.patchExpBar",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides unactionable patching errors from BepInEx Fixer",
+      "contentPattern": "GameManager_Init_CacheExplorer",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides superfluous warnings about differences in expected and available EasySettings version for Marioalexsan's mods",
+      "contentPattern": "Soft dependency EasySettings has a different version than expected",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides warnings about read failures coming from MapLoader trying to load manifest files",
+      "contentPattern": "(?:Unable to read header from archive file:|Failed to load asset bundle:|Failed to read data for the AssetBundle) .*\\.manifest\\.mapbundle",
+      "scoring": {
+        "ignore": true
+      }
+    }
+  ]
+}

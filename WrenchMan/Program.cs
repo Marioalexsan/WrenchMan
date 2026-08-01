@@ -2,14 +2,12 @@
 
 internal class Program
 {
-    public static WrenchManBot Bot { get; private set; } = null!;
-
-    static async Task Main(string[] args)
+    private static async Task Main(string[] args)
     {
-        Bot = new();
+        var bot = new WrenchManBot();
 
-        while (true)
-            await Task.Delay(100);
+        await bot.Start();
+        await bot.WaitForClose();
     }
     
     public static void Trace(string source, string message)

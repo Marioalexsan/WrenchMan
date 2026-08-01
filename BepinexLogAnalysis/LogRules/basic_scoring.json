@@ -1,0 +1,68 @@
+﻿{
+  "name": "bundled_rules/basic_scoring",
+  "rules": [
+    {
+      "description": "Highlights unhandled exceptions",
+      "contentPattern": "[\\s\\w]*Exception",
+      "scoring": {
+        "severity": 15
+      }
+    },
+    {
+      "description": "Highlights unintended multiple plugin installs, or plugin GUID conflicts",
+      "contentPattern": "skipping.*version exists",
+      "scoring": {
+        "severity": 15
+      }
+    },
+    {
+      "description": "Highlights null reference exceptions",
+      "contentPattern": "Object reference not set.*object",
+      "scoring": {
+        "severity": 15
+      }
+    },
+    {
+      "description": "Deprioritizes unactionable messages about unknown network connections",
+      "contentPattern": "Server Transport Error (.*) This is fine.",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Deprioritizes unactionable messages about trying to send on unknown connections",
+      "contentPattern": "Trying to send on unknown connection: ",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides unactionable messages about shader compiler platform availability",
+      "contentPattern": "Desired shader compiler platform 4 is not available in shader blob",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides unactionable messages about playbacks of disabled audio sources",
+      "contentPattern": "can not play a disabled audio source",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides messages about plugins being compiled againt different versions of BepInEx; usually no action is needed",
+      "contentPattern": "bepinex \\(.+\\) and might not work",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
+      "description": "Hides unactionable messages about legacy animations",
+      "contentPattern": "Can't use AnimationClip::SetCurve at Runtime on non Legacy AnimationClips",
+      "scoring": {
+        "ignore": true
+      }
+    }
+  ]
+}

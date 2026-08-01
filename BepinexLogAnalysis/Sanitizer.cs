@@ -26,6 +26,15 @@ public static partial class Sanitizer
     // To keep things simple, let's just sanitize any 17 digit numbers that start with "76561".
     [GeneratedRegex("""76561([0-9]{12})""", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex Steam64IdIndividualAccountRegex();
+
+    private static readonly List<Regex> Matchers =
+    [
+        UserFolderRegexWindows(),
+        UserFolderRegexLinux(),
+        SteamIdRegex(),
+        SteamId3Regex(),
+        Steam64IdIndividualAccountRegex(),
+    ];
     
     public static Stream Sanitize(Stream input)
     {
@@ -38,13 +47,10 @@ public static partial class Sanitizer
             var startIndex = match.Groups[1].Index - match.Groups[0].Index;
             return matchText.Remove(startIndex, match.Groups[1].Length).Insert(startIndex, "[*****]");
         }
-        
-        data = UserFolderRegexWindows().Replace(data, MatchSanitizer);
-        data = UserFolderRegexLinux().Replace(data, MatchSanitizer);
-        data = SteamIdRegex().Replace(data, MatchSanitizer);
-        data = SteamId3Regex().Replace(data, MatchSanitizer);
-        data = Steam64IdIndividualAccountRegex().Replace(data, MatchSanitizer);
 
+        foreach (var matcher in Matchers)
+            data = matcher.Replace(data, MatchSanitizer);
+        
         var memoryStream = new MemoryStream();
 
         var writer = new StreamWriter(memoryStream, leaveOpen: true);

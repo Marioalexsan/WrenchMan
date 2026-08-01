@@ -1,0 +1,27 @@
+{
+  "name": "bundled_rules/ATLYSS/custom_quests",
+  "globalGameFilter": ["ATLYSS"],
+  "globalSourceFilter": ["CustomQuests"],
+  "rules": [
+    {
+      "contentPattern": "Error while loading quest \"(?<quest>.*)\" - Quest NOT loaded!",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Plugins/Custom Quests",
+        "rule": "table(quest)"
+      }
+    },
+    {
+      "contentPattern": "Quest \"(?<quest>.*)\" not found!",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Plugins/Custom Quests",
+        "rule": "table(quest)"
+      }
+    }
+  ]
+}

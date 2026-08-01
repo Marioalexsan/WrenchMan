@@ -44,7 +44,7 @@ public class LogAnalyzerGlobalSettings
 /// </summary>
 public class GlobalSettings
 {
-    public string BepInExLogAnalysisRootConfigPath { get; set; } = Path.Combine("config", "bepinex_log_analysis.json");
+    public string BepInExLogAnalysisRootConfigPath { get; set; } = "config/bepinex_log_analysis.json";
 
     public LogAnalyzerGlobalSettings LogAnalyzer { get; set; } = new();
 }

@@ -1,0 +1,77 @@
+{
+  "name": "bundled_rules/ATLYSS/homebrewery",
+  "globalGameFilter": ["ATLYSS"],
+  "globalSourceFilter": ["Homebrewery"],
+  "rules": [
+    {
+      "contentPattern": "Processing: (?<contentPack>\\S*)",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Plugins/Homebrewery",
+        "rule": "table(contentPack)"
+      }
+    },
+    {
+      "contentPattern": "(?<plugin>.*) : (?<objName>.*) => JSON parse error: (?<err>.*)",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/Invalid JSON",
+        "rule": "group2(objName, err)"
+      }
+    },
+    {
+      "contentPattern": "(?:(?<objName>.*?) (?<objType>\\S*) (?:name )?invalid: (?<assetName>[\\S\\ ]*))|(?:(?<objName>.*?) (?<objType>\\S*) not found: (?<assetName>[\\S\\ ]*))",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/Object invalid",
+        "rule": "group3(objName, objType, assetName)"
+      }
+    },
+    {
+      "contentPattern": "(?<mesh>.*) - Glb file returned more than one mesh, we only want one!",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/Multiple meshes in GLB (expected only one)",
+        "rule": "table(mesh)"
+      }
+    },
+    {
+      "contentPattern": "(?<item>.*?) _enchantCostItem didn't find a match: (?<costItem>.*)",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/No matches for enchant item cost",
+        "rule": "table(item, costItem)"
+      }
+    },
+    {
+      "contentPattern": "(?<item>.*?) _enchantCostItem found multiple matches: (?<costItem>.*?)",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/Multiple matches for enchant item cost",
+        "rule": "table(item, costItem)"
+      }
+    },
+    {
+      "contentPattern": "\\[NotTruePNG\\] Image is not actually a PNG, this might cause unexpected issues! File: (?<filePath>.*)",
+      "scoring": {
+        "ignore": true
+      },
+      "transform": {
+        "section": "Homebrewery/PNG files with issues",
+        "rule": "table(filePath)"
+      }
+    }
+  ]
+}
