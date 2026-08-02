@@ -20,20 +20,16 @@ public static class Renderer
             writer.WriteLine(theMeta.GetValueOrDefault("bepinex_version", "Unknown version"));
 
             var logSize = long.TryParse(theMeta.GetValueOrDefault("log_size_bytes", ""), out var size) ? size : -1;
-            var startTime = DateTime.TryParse(theMeta.GetValueOrDefault("processing_start", ""), out var st) ? st : DateTime.UnixEpoch;
-            var endTime = DateTime.TryParse(theMeta.GetValueOrDefault("processing_end", ""), out var et) ? et : DateTime.UnixEpoch;
-            var msProcessing = (endTime - startTime).TotalMilliseconds;
-            var startMem = long.TryParse(theMeta.GetValueOrDefault("memory_start", ""), out var sm) ? sm : -1;
-            var endMem = long.TryParse(theMeta.GetValueOrDefault("memory_end", ""), out var em) ? em : -1;
-            var gcAlloc = endMem - startMem;
-
+            var memAlloc = long.TryParse(theMeta.GetValueOrDefault("memory_alloc", ""), out var malloc) ? malloc : -1;
+            var msProcessing = double.TryParse(theMeta.GetValueOrDefault("processing_time", ""), out var pt) ? pt : -1;
+            
             writer.Write("Log metrics ");
             writer.Write(logSize <= 0 ? "Unknown " : $"{logSize / 1048576f:F2}");
-            writer.Write(" MiB of data, ");
+            writer.Write(" MiB log, ");
             writer.Write($"{msProcessing:F1}");
-            writer.Write(" ms CPU, ");
-            writer.Write($"{gcAlloc / 1048576f:F2}");
-            writer.WriteLine(" MiB memory allocated");
+            writer.Write(" ms, ");
+            writer.Write($"{memAlloc / 1048576f:F2}");
+            writer.WriteLine(" MiB memory");
 
             writer.WriteLine();
             
@@ -42,10 +38,8 @@ public static class Renderer
                 "game_version",
                 "bepinex_version",
                 "log_size_bytes",
-                "processing_start",
-                "processing_end",
-                "memory_start",
-                "memory_end",
+                "processing_time",
+                "memory_alloc",
             ]).ToDictionary());
         }
 

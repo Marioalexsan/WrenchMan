@@ -23,6 +23,13 @@
       }
     },
     {
+      "description": "Ignores warnings about DLLs not being valid .NET assemblies (usually indicates they're native libraries instead).",
+      "contentPattern": "skipping.*not a valid .NET assembly",
+      "scoring": {
+        "ignore": true
+      }
+    },
+    {
       "description": "Deprioritizes unactionable messages about unknown network connections",
       "contentPattern": "Server Transport Error (.*) This is fine.",
       "scoring": {

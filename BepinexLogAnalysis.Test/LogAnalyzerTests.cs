@@ -14,7 +14,7 @@ public class LogAnalyzerTests
             ]
         });
 
-        using var input = TestUtils.GetTestLog("Log-2");
+        using var input = TestUtils.GetTestLog("Log-3");
         var result = await logAnalyzer.ProcessLogAsync(input);
         Assert.NotEmpty(result.ScoredMessages);
         Assert.NotEmpty(result.Content.Keys);
