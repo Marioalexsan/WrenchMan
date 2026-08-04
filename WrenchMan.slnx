@@ -1,0 +1,12 @@
+﻿<Solution>
+	<Folder Name="/Solution Files/">
+		<File Path=".gitignore" />
+		<File Path=".gitattributes" />
+		<File Path=".gitmodules" />
+		<File Path="LICENSE" />
+		<File Path="PRIVACY.md" />
+		<File Path="README.md" />
+	</Folder>
+	<Project Path="WrenchMan/WrenchMan.csproj" />
+	<Project Path="Submodules/BepInExLogAnalysis/BepInExLogAnalysis/BepInExLogAnalysis.csproj" />
+</Solution>

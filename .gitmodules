@@ -1,0 +1,3 @@
+[submodule "BepInExLogAnalysis"]
+	path = Submodules/BepInExLogAnalysis
+	url = https://github.com/Marioalexsan/BepInExLogAnalysis

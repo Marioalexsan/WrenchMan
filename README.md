@@ -1,14 +1,12 @@
 ﻿# WrenchMan
 
-This is a .NET project for analyzing BepInEx log files coming from users playing modded Unity games. It comes with the
-following components:
-
-- `BepinexLogAnalysis`, a library that includes a log analyzer and sanitizer functionality
-- `WrenchMan`, a Discord bot that can be used to analyze logs from players through DMs or servers
+A Discord.NET bot for analyzing BepInEx log files coming from users playing modded Unity games.
+It uses [BepInExLogAnalysis](https://github.com/Marioalexsan/BepInExLogAnalysis) to analyze logs sent through DMs or
+in application commands.
 
 The main use case is processing logs for [ATLYSS](https://store.steampowered.com/app/2768430/ATLYSS/) mods. The project
 processes log files and extracts informations such as:
-- Game version and log time
+- Various metadata, such as the game, BepInEx version, etc.
 - Installed BepInEx plugins and their versions
 - Installed content packs, for mods such as [Homebrewery](https://thunderstore.io/c/atlyss/p/Catman232/Homebrewery/)
 - A list of most important errors and warnings from the log file, deduplicated as needed
